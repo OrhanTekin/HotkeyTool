@@ -18,15 +18,10 @@ class MainWindow(ctk.CTk):
         self.geometry("1060x620")
         self.minsize(860, 520)
 
-        # Window icon
-        try:
-            from PIL import Image, ImageTk
-            from ui.tray import _make_icon_image
-            pil_img = _make_icon_image().resize((32, 32))
-            self._icon_photo = ImageTk.PhotoImage(pil_img)
-            self.iconphoto(True, self._icon_photo)
-        except Exception:
-            pass
+        # Window / taskbar icon — matches the tray icon exactly.
+        # Written to a temp .ico so iconbitmap (native Windows API) can consume it.
+        # Called via after() so it fires after CTk's own async icon setup.
+        self.after(50, self._apply_window_icon)
 
         self._build()
         self.protocol("WM_DELETE_WINDOW", self._on_close)
@@ -127,6 +122,39 @@ class MainWindow(ctk.CTk):
 
     def update_listening_state(self) -> None:
         self._bindings_tab.update_listening_button()
+
+    def _apply_window_icon(self) -> None:
+        """Set the title-bar / taskbar icon from assets/hotkeytool.ico.
+
+        Uses LoadImageW + WM_SETICON so Windows picks the correct size frame
+        for the current DPI rather than upscaling a small frame.
+        """
+        import ctypes
+        from utils.resource_path import resource_path
+        try:
+            ico_path = resource_path("assets/hotkeytool.ico")
+            if not ico_path.exists():
+                return
+            path_str = str(ico_path)
+            user32 = ctypes.windll.user32
+            hwnd = self.winfo_id()
+            try:
+                dpi = user32.GetDpiForWindow(hwnd)
+            except Exception:
+                dpi = 96
+            big_px   = int(32 * dpi / 96)
+            small_px = int(16 * dpi / 96)
+            LR_LOADFROMFILE = 0x0010
+            IMAGE_ICON      = 1
+            WM_SETICON      = 0x0080
+            hbig = user32.LoadImageW(
+                None, path_str, IMAGE_ICON, big_px, big_px, LR_LOADFROMFILE)
+            hsmall = user32.LoadImageW(
+                None, path_str, IMAGE_ICON, small_px, small_px, LR_LOADFROMFILE)
+            user32.SendMessageW(hwnd, WM_SETICON, 1, hbig)    # ICON_BIG
+            user32.SendMessageW(hwnd, WM_SETICON, 0, hsmall)  # ICON_SMALL
+        except Exception:
+            pass
 
     # ── close protocol ────────────────────────────────────────────────────────
 

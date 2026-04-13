@@ -39,7 +39,7 @@ class SnippetsTab(ctk.CTkFrame):
 
         ctk.CTkLabel(
             tb,
-            text="Type an abbreviation then press Tab to expand",
+            text="Type an abbreviation anywhere — it expands automatically",
             font=ctk.CTkFont(size=11),
             text_color=("#555577", "#555577"),
         ).pack(side="left", padx=4)
@@ -192,7 +192,7 @@ class _SnippetEditor(ctk.CTkToplevel):
 
         ctk.CTkLabel(
             self,
-            text="Tip: type the abbreviation in any app, then press Tab to expand it.",
+            text="Tip: the abbreviation is replaced as you type it in any app.",
             font=ctk.CTkFont(size=10), text_color=("#555577", "#555577"),
         ).pack(padx=20, pady=(6, 0), anchor="w")
 

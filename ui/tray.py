@@ -14,41 +14,44 @@ def _make_icon_image(size: int = 64) -> Image.Image:
     img = Image.new("RGBA", (size, size), (0, 0, 0, 0))
     draw = ImageDraw.Draw(img)
 
-    pad = max(2, size // 32)
-    r = max(8, size // 8)
+    # Circle background
+    pad = max(1, size // 20)
+    draw.ellipse([pad, pad, size - pad - 1, size - pad - 1], fill=(18, 22, 52, 255))
 
-    # Dark background
-    draw.rounded_rectangle([pad, pad, size - pad, size - pad], radius=r, fill=(13, 15, 35, 255))
-
-    # Lightning bolt points (normalised 0..1 → pixels)
+    # Lightning bolt — tall, narrow, centered (same proportions as ICO)
     bolt_norm = [
-        (0.58, 0.08),
-        (0.32, 0.50),
-        (0.52, 0.50),
-        (0.38, 0.92),
-        (0.66, 0.48),
-        (0.47, 0.48),
-        (0.72, 0.08),
+        (0.56, 0.07),
+        (0.30, 0.52),
+        (0.48, 0.52),
+        (0.36, 0.93),
+        (0.64, 0.46),
+        (0.46, 0.46),
+        (0.68, 0.07),
     ]
-    m = size * 0.12
+    m = size * 0.14
     w = size - 2 * m
     bolt_px = [(m + x * w, m + y * w) for x, y in bolt_norm]
 
-    # Glow layer
+    # Outer glow
+    gr = max(2, size // 14)
     glow = Image.new("RGBA", (size, size), (0, 0, 0, 0))
-    ImageDraw.Draw(glow).polygon(bolt_px, fill=(80, 180, 255, 160))
-    glow = glow.filter(ImageFilter.GaussianBlur(radius=max(2, size // 20)))
+    ImageDraw.Draw(glow).polygon(bolt_px, fill=(30, 150, 255, 100))
+    glow = glow.filter(ImageFilter.GaussianBlur(radius=gr))
     img = Image.alpha_composite(img, glow)
 
-    # Main bolt
-    draw2 = ImageDraw.Draw(img)
-    draw2.polygon(bolt_px, fill=(100, 200, 255, 255))
+    # Inner glow
+    glow2 = Image.new("RGBA", (size, size), (0, 0, 0, 0))
+    ImageDraw.Draw(glow2).polygon(bolt_px, fill=(60, 180, 255, 70))
+    glow2 = glow2.filter(ImageFilter.GaussianBlur(radius=max(2, gr // 2)))
+    img = Image.alpha_composite(img, glow2)
 
-    # Bright inner highlight
+    # Solid bolt + highlight
+    draw2 = ImageDraw.Draw(img)
+    draw2.polygon(bolt_px, fill=(85, 195, 255, 255))
     cx = sum(p[0] for p in bolt_px) / len(bolt_px)
     cy = sum(p[1] for p in bolt_px) / len(bolt_px)
-    inner = [(cx + (x - cx) * 0.85, cy + (y - cy) * 0.85) for x, y in bolt_px]
-    draw2.polygon(inner, fill=(200, 235, 255, 220))
+    hl = [(cx + (x - cx) * 0.55, cy + (y - cy) * 0.55) for x, y in bolt_px]
+    draw2.polygon(hl, fill=(205, 238, 255, 220))
 
     return img
 

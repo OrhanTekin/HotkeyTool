@@ -100,6 +100,16 @@ class BindingsTab(ctk.CTkFrame):
                 row.pack(fill="x", pady=(0, 2))
                 self._rows.append(row)
 
+    def move_binding(self, binding: Binding, direction: int) -> None:
+        """Move binding up (-1) or down (+1) in the list and save."""
+        lst = self.app.config.bindings
+        idx = lst.index(binding)
+        new_idx = idx + direction
+        if new_idx < 0 or new_idx >= len(lst):
+            return
+        lst[idx], lst[new_idx] = lst[new_idx], lst[idx]
+        self.app.save_and_reload()
+
     def update_listening_button(self) -> None:
         self._refresh_listen_btn()
 
@@ -148,6 +158,22 @@ class _BindingRow(ctk.CTkFrame):
     def _build(self) -> None:
         dim = not self.binding.enabled
 
+        # Up / down reorder buttons (side-by-side, directly in the row)
+        ctk.CTkButton(
+            self, text="▲", width=24, height=30,
+            font=ctk.CTkFont(size=10),
+            fg_color=("#1e2030", "#1e2030"), hover_color=("#2a2c44", "#2a2c44"),
+            text_color=("#8888bb", "#8888bb"),
+            command=lambda: self.tab.move_binding(self.binding, -1),
+        ).pack(side="left", padx=(6, 1))
+        ctk.CTkButton(
+            self, text="▼", width=24, height=30,
+            font=ctk.CTkFont(size=10),
+            fg_color=("#1e2030", "#1e2030"), hover_color=("#2a2c44", "#2a2c44"),
+            text_color=("#8888bb", "#8888bb"),
+            command=lambda: self.tab.move_binding(self.binding, 1),
+        ).pack(side="left", padx=(0, 4))
+
         # Enable switch
         self._sw = ctk.CTkSwitch(self, text="", width=46, height=22)
         if self.binding.enabled:
@@ -155,7 +181,7 @@ class _BindingRow(ctk.CTkFrame):
         else:
             self._sw.deselect()
         self._sw.configure(command=self._toggle)
-        self._sw.pack(side="left", padx=(8, 2))
+        self._sw.pack(side="left", padx=(2, 2))
 
         # Hotkey chip
         hotkey_text = self.binding.hotkey.upper() if self.binding.hotkey else "\u2014"

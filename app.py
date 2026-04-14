@@ -65,7 +65,9 @@ class App:
 
         # Lazy-create floating windows (they need a root window to exist first)
         from ui.stats_widget import StatsWidget
+        from ui.notes_window import NotesWindow
         self.stats_widget = StatsWidget(self)
+        self.notes_win    = NotesWindow(self)
 
         self._tray = TrayIcon(self)
         self._tray.start()
@@ -160,17 +162,15 @@ class App:
     # ── notes ─────────────────────────────────────────────────────────────────
 
     def show_notes_window(self) -> None:
-        if self.window:
-            self.window.after(0, self._do_show_notes)
+        if self.notes_win and self.window:
+            self.window.after(0, self.notes_win.show)
 
-    def _do_show_notes(self) -> None:
-        if self.notes_win is None:
-            from ui.notes_window import NotesWindow
-            self.notes_win = NotesWindow(self)
-        self.notes_win.show()
+    def toggle_notes_window(self) -> None:
+        if self.notes_win and self.window:
+            self.window.after(0, self.notes_win.toggle)
 
     def _cb_show_notes(self) -> None:
-        self.show_notes_window()
+        self.toggle_notes_window()
 
     # ── stats widget ──────────────────────────────────────────────────────────
 
@@ -184,6 +184,26 @@ class App:
     def _on_stats_update(self, stats) -> None:
         if self.stats_widget and self.window:
             self.window.after(0, lambda: self.stats_widget.update_stats(stats))
+
+    # ── sleep / wake recovery ─────────────────────────────────────────────────
+
+    def on_system_resume(self) -> None:
+        """Called when the PC wakes from sleep.
+
+        Windows drops all WH_KEYBOARD_LL hooks while suspended, so the
+        keyboard library's hook is dead on resume.  Restart both the hotkey
+        listener and the snippet expander to re-install fresh hooks.
+        """
+        # Snippet expander always gets restarted (it has its own hook)
+        self.snippets.stop()
+        self.snippets.start()
+
+        # Hotkey listener only if it was running before sleep
+        if self.listener.is_running():
+            self.listener.stop()
+            self.listener.start()
+            if self.window:
+                self.window.update_status("Reconnected after sleep")
 
     # ── hotkey trigger callback (keyboard thread → UI thread) ─────────────────
 

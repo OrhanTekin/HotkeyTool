@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import ctypes
+import ctypes.wintypes as _wt
+import sys
 from datetime import datetime
 from typing import TYPE_CHECKING
 
@@ -7,6 +10,23 @@ import customtkinter as ctk
 
 if TYPE_CHECKING:
     from app import App
+
+# ── Windows power-broadcast hook (sleep/wake detection) ───────────────────────
+if sys.platform == "win32":
+    _u32 = ctypes.windll.user32
+    _WNDPROCTYPE = ctypes.WINFUNCTYPE(
+        ctypes.c_ssize_t, _wt.HWND, _wt.UINT, _wt.WPARAM, _wt.LPARAM,
+    )
+    _u32.SetWindowLongPtrW.restype  = ctypes.c_ssize_t
+    _u32.SetWindowLongPtrW.argtypes = [_wt.HWND, ctypes.c_int, ctypes.c_ssize_t]
+    _u32.CallWindowProcW.restype    = ctypes.c_ssize_t
+    _u32.CallWindowProcW.argtypes   = [
+        ctypes.c_ssize_t, _wt.HWND, _wt.UINT, _wt.WPARAM, _wt.LPARAM,
+    ]
+    _GWL_WNDPROC          = -4
+    _WM_POWERBROADCAST    = 0x0218
+    _PBT_RESUMESUSPEND    = 7   # user-initiated resume
+    _PBT_RESUMEAUTOMATIC  = 18  # automatic resume (e.g. scheduled wake)
 
 
 class MainWindow(ctk.CTk):
@@ -25,6 +45,7 @@ class MainWindow(ctk.CTk):
 
         self._build()
         self.protocol("WM_DELETE_WINDOW", self._on_close)
+        self.after(200, self._setup_power_hook)
 
     # ── layout ────────────────────────────────────────────────────────────────
 
@@ -59,7 +80,7 @@ class MainWindow(ctk.CTk):
             header, text="Notes", width=72, height=30,
             font=ctk.CTkFont(size=11),
             fg_color=("#1e2a3a", "#1e2a3a"), hover_color=("#2a3a4a", "#2a3a4a"),
-            command=self.app.show_notes_window,
+            command=lambda: self.app.notes_win.toggle(),
         ).pack(side="right", padx=(4, 16))
 
         ctk.CTkButton(
@@ -153,6 +174,30 @@ class MainWindow(ctk.CTk):
                 None, path_str, IMAGE_ICON, small_px, small_px, LR_LOADFROMFILE)
             user32.SendMessageW(hwnd, WM_SETICON, 1, hbig)    # ICON_BIG
             user32.SendMessageW(hwnd, WM_SETICON, 0, hsmall)  # ICON_SMALL
+        except Exception:
+            pass
+
+    def _setup_power_hook(self) -> None:
+        """Subclass the native HWND so we receive WM_POWERBROADCAST."""
+        if sys.platform != "win32":
+            return
+        try:
+            hwnd = self.winfo_id()
+            app  = self.app
+
+            def _proc(hwnd, msg, wparam, lparam):
+                if msg == _WM_POWERBROADCAST and wparam in (
+                    _PBT_RESUMESUSPEND, _PBT_RESUMEAUTOMATIC
+                ):
+                    self.after(2000, app.on_system_resume)
+                return _u32.CallWindowProcW(
+                    self._old_wndproc, hwnd, msg, wparam, lparam
+                )
+
+            self._new_wndproc = _WNDPROCTYPE(_proc)
+            self._old_wndproc = _u32.SetWindowLongPtrW(
+                hwnd, _GWL_WNDPROC, self._new_wndproc
+            )
         except Exception:
             pass
 

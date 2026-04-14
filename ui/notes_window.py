@@ -19,12 +19,12 @@ class NotesWindow(ctk.CTkToplevel):
         super().__init__()
         self.app = app
         self._active_note_id: str | None = None
+        self._visible = False
 
         self.title("Quick Notes")
         self.minsize(320, 240)
         self.attributes("-topmost", False)
 
-        # Restore saved geometry or use default
         geo = app.config.settings.notes_geometry
         self.geometry(geo if geo else "480x400")
 
@@ -32,6 +32,7 @@ class NotesWindow(ctk.CTkToplevel):
         self.bind("<Configure>", self._on_configure)
         self._build()
         self._load_first_note()
+        self.withdraw()   # hidden by default (same as StatsWidget)
 
     # ── layout ────────────────────────────────────────────────────────────────
 
@@ -158,20 +159,30 @@ class NotesWindow(ctk.CTkToplevel):
         if self.winfo_viewable():
             self.app.config.settings.notes_geometry = self.geometry()
 
-    # ── show / hide ───────────────────────────────────────────────────────────
+    # ── show / hide / toggle  (mirrors StatsWidget exactly) ──────────────────
 
     def show(self) -> None:
+        self._visible = True
         self.deiconify()
         self.lift()
-        self.attributes("-topmost", True)
-        self.after(100, lambda: self.attributes("-topmost", False))
-        self.focus_force()
+        self.after(80, self._focus_text)
 
     def hide(self) -> None:
+        self._visible = False
         self._save_current()
-        self._on_configure()   # Persist position before hiding
+        self._on_configure()
         self.app.save_config_only()
         self.withdraw()
+
+    def toggle(self) -> None:
+        if self._visible:
+            self.hide()
+        else:
+            self.show()
+
+    def _focus_text(self) -> None:
+        self.focus_force()
+        self._text._textbox.focus_force()
 
 
 class _InputDialog(ctk.CTkToplevel):

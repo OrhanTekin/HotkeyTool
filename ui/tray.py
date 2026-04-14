@@ -117,7 +117,7 @@ class TrayIcon:
             root.after(0, self.app.toggle_listening)
 
     def _on_show_notes(self, icon, item) -> None:
-        self.app.show_notes_window()
+        self.app.toggle_notes_window()
 
     def _on_toggle_stats(self, icon, item) -> None:
         self.app.toggle_stats_widget()

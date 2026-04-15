@@ -47,8 +47,9 @@ class App:
         self._tray                        = None
 
         # Register callbacks so action_runner can reach UI-level services
-        register_app_callback("toggle_stats_widget", self._cb_toggle_stats)
-        register_app_callback("show_notes_window",   self._cb_show_notes)
+        register_app_callback("toggle_stats_widget",  self._cb_toggle_stats)
+        register_app_callback("show_notes_window",    self._cb_show_notes)
+        register_app_callback("show_transform_picker", self._cb_show_transform_picker)
 
     # ── lifecycle ─────────────────────────────────────────────────────────────
 
@@ -171,6 +172,17 @@ class App:
 
     def _cb_show_notes(self) -> None:
         self.toggle_notes_window()
+
+    # ── transform picker ──────────────────────────────────────────────────────
+
+    def _cb_show_transform_picker(self, trigger_hwnd: int) -> None:
+        """Called from action_runner daemon thread; schedules picker on main thread."""
+        if self.window:
+            self.window.after(0, lambda: self._open_transform_picker(trigger_hwnd))
+
+    def _open_transform_picker(self, trigger_hwnd: int) -> None:
+        from ui.transform_picker import TransformPicker
+        TransformPicker(self, trigger_hwnd)
 
     # ── stats widget ──────────────────────────────────────────────────────────
 

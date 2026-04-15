@@ -86,6 +86,16 @@ def _dispatch(action: Action, trigger_hwnd: int = 0) -> None:
             fn()
         return
 
+    if action.type == "text_transform":
+        _text_transform(action, trigger_hwnd)
+        return
+
+    if action.type == "show_transform_picker":
+        fn = _app_callbacks.get("show_transform_picker")
+        if fn:
+            fn(trigger_hwnd)
+        return
+
     handlers = {
         "open_url":      _open_url,
         "open_app":      _open_app,
@@ -94,6 +104,8 @@ def _dispatch(action: Action, trigger_hwnd: int = 0) -> None:
         "media_control": _media_control,
         "system_action": _system_action,
         "send_keys":     _send_keys,
+        "wait":          _wait,
+        "color_picker":  _color_picker,
     }
     fn = handlers.get(action.type)
     if fn:
@@ -181,6 +193,79 @@ def _replay_macro(action: Action) -> None:
     if action.value:
         from utils.macro_recorder import replay_macro
         replay_macro(action.value)
+
+
+def _wait(action: Action) -> None:
+    """Pause execution for the specified number of milliseconds."""
+    try:
+        ms = max(0, int(action.value))
+    except (ValueError, TypeError):
+        return
+    if ms > 0:
+        time.sleep(ms / 1000.0)
+
+
+def _color_picker(action: Action) -> None:
+    """Sample the pixel color under the cursor and copy it as #RRGGBB."""
+    import ctypes.wintypes as _wt
+    user32  = ctypes.windll.user32
+    gdi32   = ctypes.windll.gdi32
+
+    pt = _wt.POINT()
+    user32.GetCursorPos(ctypes.byref(pt))
+    hdc   = user32.GetDC(0)
+    color = gdi32.GetPixel(hdc, pt.x, pt.y)
+    user32.ReleaseDC(0, hdc)
+
+    r = color & 0xFF
+    g = (color >> 8)  & 0xFF
+    b = (color >> 16) & 0xFF
+    hex_color = f"#{r:02X}{g:02X}{b:02X}"
+
+    _write_clipboard_text(hex_color)
+
+
+def _text_transform(action: Action, trigger_hwnd: int) -> None:
+    """Copy selected text, show the transform picker, then paste result."""
+    import keyboard as kb
+    # Bring the source window to front and copy selected text
+    if trigger_hwnd:
+        ctypes.windll.user32.SetForegroundWindow(trigger_hwnd)
+        time.sleep(0.05)
+    kb.send("ctrl+c")
+    time.sleep(0.20)   # let clipboard settle
+    # Schedule the picker on the main thread
+    fn = _app_callbacks.get("show_transform_picker")
+    if fn:
+        fn(trigger_hwnd)
+
+
+def _write_clipboard_text(text: str) -> None:
+    """Write a string to the clipboard from any thread using Win32 API."""
+    CF_UNICODETEXT = 13
+    GMEM_MOVEABLE  = 0x0002
+    user32   = ctypes.windll.user32
+    kernel32 = ctypes.windll.kernel32
+    kernel32.GlobalAlloc.restype  = ctypes.c_void_p
+    kernel32.GlobalAlloc.argtypes = [ctypes.c_uint, ctypes.c_size_t]
+    kernel32.GlobalLock.restype   = ctypes.c_void_p
+    kernel32.GlobalLock.argtypes  = [ctypes.c_void_p]
+    kernel32.GlobalUnlock.argtypes = [ctypes.c_void_p]
+    kernel32.GlobalFree.argtypes   = [ctypes.c_void_p]
+    encoded  = (text + "\0").encode("utf-16-le")
+    h = kernel32.GlobalAlloc(GMEM_MOVEABLE, len(encoded))
+    if not h:
+        return
+    p = kernel32.GlobalLock(h)
+    if not p:
+        kernel32.GlobalFree(h)
+        return
+    ctypes.memmove(p, encoded, len(encoded))
+    kernel32.GlobalUnlock(h)
+    if user32.OpenClipboard(None):
+        user32.EmptyClipboard()
+        user32.SetClipboardData(CF_UNICODETEXT, ctypes.c_void_p(h))
+        user32.CloseClipboard()
 
 
 def _system_action(action: Action) -> None:

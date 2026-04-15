@@ -23,6 +23,9 @@ _TYPES = [
     ("Replay Macro",         "replay_macro"),
     ("Toggle Stats Widget",  "toggle_stats_widget"),
     ("Show Notes",           "show_notes_window"),
+    ("Wait (ms)",            "wait"),
+    ("Color Picker",         "color_picker"),
+    ("Transform Text",       "text_transform"),
 ]
 
 # Common keys offered in the send_keys quick-picker
@@ -312,6 +315,38 @@ class ActionEditor(ctk.CTkFrame):
                 text_color=("#888899", "#888899"),
             ).pack(side="left", padx=4)
 
+        elif atype == "wait":
+            ctk.CTkLabel(
+                self.value_frame, text="Duration (ms):", width=100,
+                font=ctk.CTkFont(size=11),
+            ).pack(side="left")
+            ctk.CTkEntry(
+                self.value_frame, textvariable=self.value_var,
+                width=90, height=28,
+                placeholder_text="500",
+            ).pack(side="left", padx=4)
+            ctk.CTkLabel(
+                self.value_frame, text="  Pause before the next step.",
+                font=ctk.CTkFont(size=10),
+                text_color=("#505065", "#505065"),
+            ).pack(side="left")
+
+        elif atype == "color_picker":
+            ctk.CTkLabel(
+                self.value_frame,
+                text="Samples the pixel color under the cursor and copies it as #RRGGBB.",
+                font=ctk.CTkFont(size=11),
+                text_color=("#888899", "#888899"),
+            ).pack(side="left", padx=4)
+
+        elif atype == "text_transform":
+            ctk.CTkLabel(
+                self.value_frame,
+                text="Copies selected text, shows a transform picker, then pastes the result.",
+                font=ctk.CTkFont(size=11),
+                text_color=("#888899", "#888899"),
+            ).pack(side="left", padx=4)
+
         elif atype == "replay_macro":
             self._refresh_macro_row()
 
@@ -389,7 +424,8 @@ class ActionEditor(ctk.CTkFrame):
         elif atype == "system_action":
             lbl   = self._system_var.get() if self._system_var else _SYSTEM_OPTS[0][0]
             value = _SYS_LABEL_TO_KEY.get(lbl, "lock")
-        elif atype in ("toggle_topmost", "toggle_stats_widget", "show_notes_window"):
+        elif atype in ("toggle_topmost", "toggle_stats_widget", "show_notes_window",
+                       "color_picker", "text_transform"):
             value = ""
         else:
             value = self.value_var.get().strip()

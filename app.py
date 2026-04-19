@@ -7,6 +7,8 @@ All cross-thread calls that need to reach the UI go through window.after(0, call
 """
 from __future__ import annotations
 
+import time
+import threading
 from typing import Optional
 
 import customtkinter as ctk
@@ -84,6 +86,7 @@ class App:
         # Stats monitor
         self.stats_monitor = StatsMonitor(self._on_stats_update)
         self.stats_monitor.start()
+        self._start_sleep_detector()
         if self.config.settings.stats_widget_on_startup:
             self.stats_widget.show()
 
@@ -202,20 +205,59 @@ class App:
     def on_system_resume(self) -> None:
         """Called when the PC wakes from sleep.
 
-        Windows drops all WH_KEYBOARD_LL hooks while suspended, so the
-        keyboard library's hook is dead on resume.  Restart both the hotkey
-        listener and the snippet expander to re-install fresh hooks.
+        Windows drops all WH_KEYBOARD_LL hooks while suspended.
+        keyboard.remove_all_hotkeys() only clears Python callbacks — the
+        library's listener thread stays alive with a dead hook, so the next
+        add_hotkey() call never reinstalls it.  keyboard.unhook_all() fully
+        tears down the internals so the next add_hotkey() starts fresh.
         """
-        # Snippet expander always gets restarted (it has its own hook)
+        # Cooldown: WNDPROC and the time-jump detector can both fire; ignore
+        # any duplicate call within 10 seconds of the first one.
+        now = time.monotonic()
+        if now - getattr(self, "_last_resume_t", 0.0) < 10:
+            return
+        self._last_resume_t = now
+
+        import keyboard
+
+        was_listening = self.listener.is_running()
+
+        # Tear everything down
         self.snippets.stop()
+        if was_listening:
+            self.listener.stop()
+        try:
+            keyboard.unhook_all()   # forces the library to restart its hook thread
+        except Exception:
+            pass
+
+        # Reinstall everything
+        if was_listening:
+            self.listener.start()
         self.snippets.start()
 
-        # Hotkey listener only if it was running before sleep
-        if self.listener.is_running():
-            self.listener.stop()
-            self.listener.start()
-            if self.window:
-                self.window.update_status("Reconnected after sleep")
+        if self.window:
+            self.window.update_status("Reconnected after sleep")
+
+    def _start_sleep_detector(self) -> None:
+        """Fallback sleep detection via monotonic-clock jump.
+
+        WM_POWERBROADCAST is unreliable when the window is hidden in the tray.
+        A sleeping thread that wakes up much later than expected means the OS
+        suspended the machine.
+        """
+        POLL_S  = 10   # check interval
+        GRACE_S = 15   # if sleep() runs this many seconds over, assume suspend
+
+        def _monitor() -> None:
+            while True:
+                t0 = time.monotonic()
+                time.sleep(POLL_S)
+                if time.monotonic() - t0 > POLL_S + GRACE_S:
+                    if self.window:
+                        self.window.after(1500, self.on_system_resume)
+
+        threading.Thread(target=_monitor, daemon=True).start()
 
     # ── hotkey trigger callback (keyboard thread → UI thread) ─────────────────
 

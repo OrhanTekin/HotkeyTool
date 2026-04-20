@@ -1,176 +1,555 @@
 """
-Floating quick-notes window. Multiple named notes with auto-save.
-Can be shown/hidden without destroying state.
+Quick Notes — floating editor window.
+
+Features
+────────
+• File-based storage (one UTF-8 .txt per note under %APPDATA%/HotkeyTool/notes/)
+• Line-number gutter
+• Integrated Find / Replace bar  (Ctrl+F / Ctrl+H to toggle, appears inline below toolbar)
+• Status bar  (line · column · character count · word count)
+• Word-wrap toggle
+• Zoom in / out  (Ctrl+= / Ctrl+-)
+• Full undo / redo  (Ctrl+Z / Ctrl+Y)
+• Select all  (Ctrl+A)
+• Go to line  (Ctrl+G)
+• Auto-save on every keystroke
+• Options dialog  (⚙ button)
+• Default size  1200 × 800
 """
 from __future__ import annotations
 
+import re
 import tkinter as tk
-from typing import TYPE_CHECKING, List
+from typing import TYPE_CHECKING, List, Optional
 
 import customtkinter as ctk
 
+from core.notes_manager import (
+    NoteFile,
+    create_note,
+    delete_note,
+    load_all,
+    load_content,
+    rename_note,
+    save_content,
+)
+
 if TYPE_CHECKING:
     from app import App
-    from core.models import Note
+
+_DEFAULT_GEO  = "1200x800"
+_MIN_FONT     = 8
+_MAX_FONT     = 36
+_DARK_BG      = "#0d0d1e"
+_DARK_FG      = "#d8d8f8"
+_GUTTER_BG    = "#0a0a16"
+_GUTTER_FG    = "#3a3a5a"
+_CURSOR_CLR   = "#7799cc"
+_SEL_BG       = "#1e3a6e"
+_MATCH_TAG    = "match"
+_MATCH_CUR    = "match_cur"
+
+_FONTS = ["Consolas", "Cascadia Code", "Courier New", "Lucida Console"]
 
 
 class NotesWindow(ctk.CTkToplevel):
     def __init__(self, app: "App") -> None:
         super().__init__()
-        self.app = app
-        self._active_note_id: str | None = None
-        self._visible = False
+        self.app      = app
+        self._notes:  List[NoteFile] = []
+        self._active: Optional[NoteFile] = None
+        self._visible         = False
+        self._font_size       = 13
+        self._font_name       = "Consolas"
+        self._wrap_mode       = "word"
+        self._find_visible    = False
+        self._find_results:   List[str] = []
+        self._find_idx        = 0
 
         self.title("Quick Notes")
-        self.minsize(320, 240)
-        self.attributes("-topmost", False)
-
+        self.minsize(460, 320)
         geo = app.config.settings.notes_geometry
-        self.geometry(geo if geo else "480x400")
+        self.geometry(geo if geo else _DEFAULT_GEO)
 
         self.protocol("WM_DELETE_WINDOW", self.hide)
         self.bind("<Configure>", self._on_configure)
         self._build()
-        self._load_first_note()
-        self.withdraw()   # hidden by default (same as StatsWidget)
+        self._reload_notes()
+        self.withdraw()
 
     # ── layout ────────────────────────────────────────────────────────────────
 
     def _build(self) -> None:
-        # Top bar: note selector + actions
-        top = ctk.CTkFrame(self, fg_color=("#0f0f22", "#0f0f22"), height=42)
-        top.pack(fill="x")
-        top.pack_propagate(False)
+        # ── Toolbar ──
+        tb = tk.Frame(self, bg="#0f0f22", height=44)
+        tb.pack(fill="x", side="top")
+        tb.pack_propagate(False)
+        self._tb = tb
 
-        ctk.CTkButton(
-            top, text="+", width=30, height=28,
-            fg_color=("#163a22", "#163a22"), hover_color=("#1e4a2a", "#1e4a2a"),
-            font=ctk.CTkFont(size=14, weight="bold"),
-            command=self._new_note,
-        ).pack(side="left", padx=(6, 2), pady=6)
+        def _tb_btn(parent, text, cmd, bg="#1e2a3a", width=6, fg="#c0c0e0"):
+            return tk.Button(parent, text=text, command=cmd,
+                             bg=bg, fg=fg, activebackground="#2a3a4a",
+                             activeforeground="#ffffff", relief="flat",
+                             font=("Segoe UI", 10), width=width, cursor="hand2")
 
-        self._note_var = ctk.StringVar()
+        _tb_btn(tb, "+", self._new_note, bg="#163a22", width=3).pack(
+            side="left", padx=(6, 2), pady=8)
+
+        self._note_var  = ctk.StringVar()
         self._note_menu = ctk.CTkOptionMenu(
-            top, variable=self._note_var,
-            values=self._note_names(),
-            command=self._on_note_selected,
-            width=180, height=28,
+            tb, variable=self._note_var, values=["(none)"],
+            command=self._on_note_selected, width=180, height=28,
         )
-        self._note_menu.pack(side="left", padx=4, pady=6)
+        self._note_menu.pack(side="left", padx=4, pady=8)
 
-        ctk.CTkButton(
-            top, text="Rename", width=70, height=28,
-            fg_color=("#1e2a3a", "#1e2a3a"), hover_color=("#2a3a4a", "#2a3a4a"),
-            font=ctk.CTkFont(size=11),
-            command=self._rename_note,
-        ).pack(side="left", padx=2, pady=6)
+        _tb_btn(tb, "Rename", self._rename_note, width=8).pack(side="left", padx=2)
+        _tb_btn(tb, "Delete", self._delete_note, bg="#5c1a1a", width=7).pack(side="left", padx=2)
 
-        ctk.CTkButton(
-            top, text="Delete", width=60, height=28,
-            fg_color=("#5c1a1a", "#5c1a1a"), hover_color=("#7a2222", "#7a2222"),
-            font=ctk.CTkFont(size=11),
-            command=self._delete_note,
-        ).pack(side="left", padx=2, pady=6)
+        # Right-side toolbar buttons
+        _tb_btn(tb, "⚙", self._open_options, width=3).pack(side="right", padx=(2, 14), pady=8)
+        _tb_btn(tb, "A+", self._zoom_in,   width=3).pack(side="right", padx=2)
+        _tb_btn(tb, "A−", self._zoom_out,  width=3).pack(side="right", padx=2)
 
-        # Text area
-        self._text = ctk.CTkTextbox(
-            self,
-            font=ctk.CTkFont(size=13, family="Consolas"),
-            wrap="word",
+        self._wrap_btn_tk = tk.Button(
+            tb, text="Wrap ✓", command=self._toggle_wrap,
+            bg="#1e3a2a", fg="#aaddaa", activebackground="#2a4a38",
+            activeforeground="#ffffff", relief="flat",
+            font=("Segoe UI", 10), width=7, cursor="hand2",
         )
-        self._text.pack(fill="both", expand=True, padx=6, pady=6)
-        self._text.bind("<KeyRelease>", self._on_text_change)
+        self._wrap_btn_tk.pack(side="right", padx=2)
+
+        _tb_btn(tb, "Find", self._toggle_find, width=6).pack(side="right", padx=2)
+        _tb_btn(tb, "Go to line", self._go_to_line, width=10).pack(side="right", padx=2)
+
+        # ── Find / Replace bar (hidden initially, placed between toolbar and editor) ──
+        self._find_bar = tk.Frame(self, bg="#080816")
+
+        fi = tk.Frame(self._find_bar, bg="#080816")
+        fi.pack(fill="x", padx=6, pady=5)
+
+        def _lbl(text):
+            return tk.Label(fi, text=text, bg="#080816", fg="#9999bb",
+                            font=("Segoe UI", 10))
+
+        def _entry(var, w):
+            e = tk.Entry(fi, textvariable=var, width=w,
+                         bg="#141428", fg="#d8d8f8", insertbackground="#7799cc",
+                         relief="flat", font=("Consolas", 10), borderwidth=0,
+                         highlightthickness=1, highlightbackground="#2a2a4a",
+                         highlightcolor="#4a4a8a")
+            return e
+
+        def _fbtn(text, cmd, bg="#1e2a3a", w=8):
+            return tk.Button(fi, text=text, command=cmd,
+                             bg=bg, fg="#c0c0e0", activebackground="#2a3a5a",
+                             relief="flat", font=("Segoe UI", 9), width=w, cursor="hand2")
+
+        _lbl("Find:").pack(side="left")
+        self._find_var = tk.StringVar()
+        self._find_entry = _entry(self._find_var, 22)
+        self._find_entry.pack(side="left", padx=(2, 2))
+        self._find_var.trace_add("write", lambda *_: self._do_highlight())
+        self._find_entry.bind("<Return>",   lambda e: self._find_step(1))
+        self._find_entry.bind("<KP_Enter>", lambda e: self._find_step(1))
+
+        _fbtn("▲", lambda: self._find_step(-1), w=2).pack(side="left", padx=1)
+        _fbtn("▼", lambda: self._find_step(1),  w=2).pack(side="left", padx=1)
+
+        self._case_var = tk.BooleanVar(value=False)
+        tk.Checkbutton(
+            fi, text="Aa", variable=self._case_var,
+            command=self._do_highlight,
+            bg="#080816", fg="#9999bb", selectcolor="#141428",
+            activebackground="#080816", relief="flat",
+            font=("Segoe UI", 9),
+        ).pack(side="left", padx=4)
+
+        self._find_count = tk.Label(fi, text="", bg="#080816", fg="#557799",
+                                    font=("Segoe UI", 9), width=10, anchor="w")
+        self._find_count.pack(side="left", padx=(4, 8))
+
+        _lbl("Replace:").pack(side="left")
+        self._repl_var = tk.StringVar()
+        self._repl_entry = _entry(self._repl_var, 18)
+        self._repl_entry.pack(side="left", padx=(2, 4))
+        self._repl_entry.bind("<Return>",   lambda e: self._replace_one())
+        self._repl_entry.bind("<KP_Enter>", lambda e: self._replace_one())
+
+        _fbtn("Replace",    self._replace_one, bg="#1e3a2a", w=8).pack(side="left", padx=2)
+        _fbtn("Replace All", self._replace_all, bg="#1e3a2a", w=10).pack(side="left", padx=1)
+        _fbtn("✕", self._hide_find, bg="#3a1616", w=2).pack(side="right", padx=4)
+
+        # ── Status bar (packed to bottom BEFORE editor so it stays fixed) ──
+        sf = tk.Frame(self, bg="#080816", height=24)
+        sf.pack(fill="x", side="bottom")
+        sf.pack_propagate(False)
+        self._status = tk.Label(
+            sf, text="Ln 1, Col 1  |  0 chars  |  0 words",
+            bg="#080816", fg="#444466", font=("Segoe UI", 9), anchor="w",
+        )
+        self._status.pack(side="left", padx=10)
+        self._saved_lbl = tk.Label(
+            sf, text="",
+            bg="#080816", fg="#997755", font=("Segoe UI", 9), anchor="e",
+        )
+        self._saved_lbl.pack(side="right", padx=10)
+
+        # ── Editor area ──
+        editor = tk.Frame(self, bg=_GUTTER_BG)
+        editor.pack(fill="both", expand=True)
+        self._editor_frame = editor  # stored so find bar can pack before it
+
+        self._linenums = tk.Text(
+            editor,
+            width=4, padx=6, pady=4,
+            bg=_GUTTER_BG, fg=_GUTTER_FG,
+            selectbackground=_GUTTER_BG, selectforeground=_GUTTER_FG,
+            font=(self._font_name, self._font_size),
+            state="disabled", cursor="arrow",
+            relief="flat", borderwidth=0, wrap="none",
+        )
+        self._linenums.pack(side="left", fill="y")
+        tk.Frame(editor, width=1, bg="#1e1e38").pack(side="left", fill="y")
+
+        self._text = tk.Text(
+            editor,
+            padx=10, pady=4,
+            bg=_DARK_BG, fg=_DARK_FG,
+            insertbackground=_CURSOR_CLR,
+            selectbackground=_SEL_BG, selectforeground=_DARK_FG,
+            font=(self._font_name, self._font_size),
+            relief="flat", borderwidth=0,
+            wrap=self._wrap_mode,
+            undo=True, maxundo=-1,
+            tabs=("1c",),
+        )
+        self._text.tag_configure(_MATCH_TAG,
+                                 background="#3a3a1a", foreground="#ffdd88")
+        self._text.tag_configure(_MATCH_CUR,
+                                 background="#7a6020", foreground="#ffffff")
+
+        vsb = ctk.CTkScrollbar(editor, command=self._scroll_both)
+        vsb.pack(side="right", fill="y")
+
+        self._text.configure(yscrollcommand=lambda *a: (
+            vsb.set(*a),
+            self._linenums.yview_moveto(a[0]),
+        ))
+        self._text.pack(side="left", fill="both", expand=True)
+
+        # ── Key / event bindings ──
+        self._text.bind("<<Modified>>",    self._on_modified)
+        self._text.bind("<KeyRelease>",    self._on_key_release)
+        self._text.bind("<ButtonRelease>", self._update_status)
+        self._text.bind("<Control-z>",     lambda e: "break")   # let tk handle undo
+        self._text.bind("<Control-y>",     lambda e: (self._text.edit_redo(), "break"))
+        self._text.bind("<Control-Y>",     lambda e: (self._text.edit_redo(), "break"))
+        self._text.bind("<Control-a>",     lambda e: (self._select_all(), "break"))
+        self._text.bind("<Control-A>",     lambda e: (self._select_all(), "break"))
+        self._text.bind("<Control-f>",     lambda e: (self._show_find(), "break"))
+        self._text.bind("<Control-F>",     lambda e: (self._show_find(), "break"))
+        self._text.bind("<Control-h>",     lambda e: (self._show_find(), "break"))
+        self._text.bind("<Control-H>",     lambda e: (self._show_find(), "break"))
+        self._text.bind("<Control-g>",     lambda e: (self._go_to_line(), "break"))
+        self._text.bind("<Control-G>",     lambda e: (self._go_to_line(), "break"))
+        self._text.bind("<Control-minus>", lambda e: (self._zoom_out(), "break"))
+        self._text.bind("<Control-equal>", lambda e: (self._zoom_in(),  "break"))
+        self._text.bind("<Control-plus>",  lambda e: (self._zoom_in(),  "break"))
+        self._text.bind("<Escape>",        self._on_escape)
+        # Window-level bindings (when focus is on other controls)
+        self.bind("<Control-f>", lambda e: self._show_find())
+        self.bind("<Control-F>", lambda e: self._show_find())
+        self.bind("<Control-h>", lambda e: self._show_find())
+        self.bind("<Control-H>", lambda e: self._show_find())
+        self.bind("<Escape>",    lambda e: self._on_escape())
 
     # ── note management ───────────────────────────────────────────────────────
 
-    def _note_names(self) -> List[str]:
-        return [n.name for n in self.app.config.notes] or ["(none)"]
-
-    def _load_first_note(self) -> None:
-        notes = self.app.config.notes
-        if notes:
-            self._load_note(notes[0])
+    def _reload_notes(self) -> None:
+        self._notes = load_all()
+        if not self._notes:
+            self._notes = [create_note("Quick Note")]
         self._refresh_menu()
-
-    def _load_note(self, note: "Note") -> None:
-        self._save_current()
-        self._active_note_id = note.id
-        self._text.delete("1.0", "end")
-        self._text.insert("1.0", note.content)
-        self._note_var.set(note.name)
-
-    def _save_current(self) -> None:
-        if self._active_note_id is None:
-            return
-        note = next((n for n in self.app.config.notes if n.id == self._active_note_id), None)
-        if note:
-            note.content = self._text.get("1.0", "end-1c")
-            self.app.save_config_only()
+        self._load_note(self._notes[0])
 
     def _refresh_menu(self) -> None:
-        names = self._note_names()
+        names = [n.name for n in self._notes] or ["(none)"]
         self._note_menu.configure(values=names)
 
+    def _load_note(self, note: NoteFile) -> None:
+        self._save_active()
+        self._active = note
+        self._text.config(state="normal")
+        self._text.delete("1.0", "end")
+        self._text.insert("1.0", load_content(note))
+        self._text.edit_reset()
+        self._text.edit_modified(False)
+        self._note_var.set(note.name)
+        self._update_linenums()
+        self._update_status()
+        self._saved_lbl.config(text="")
+
+    def _save_active(self) -> None:
+        if self._active is not None:
+            save_content(self._active, self._text.get("1.0", "end-1c"))
+
     def _on_note_selected(self, name: str) -> None:
-        note = next((n for n in self.app.config.notes if n.name == name), None)
-        if note:
+        note = next((n for n in self._notes if n.name == name), None)
+        if note and (self._active is None or note.id != self._active.id):
             self._load_note(note)
 
-    def _on_text_change(self, _event=None) -> None:
-        self._save_current()
-
     def _new_note(self) -> None:
-        from core.models import Note
-        note = Note.new(f"Note {len(self.app.config.notes) + 1}")
-        self.app.config.notes.append(note)
+        note = create_note(f"Note {len(self._notes) + 1}")
+        self._notes.append(note)
         self._refresh_menu()
         self._load_note(note)
 
     def _rename_note(self) -> None:
-        if not self._active_note_id:
+        if not self._active:
             return
-        note = next((n for n in self.app.config.notes if n.id == self._active_note_id), None)
-        if not note:
-            return
-        dialog = _InputDialog(self, "Rename Note", "New name:", note.name)
-        self.wait_window(dialog)
-        new_name = dialog.result
-        if new_name and new_name.strip():
-            note.name = new_name.strip()
+        dlg = _InputDialog(self, "Rename Note", "New name:", self._active.name)
+        self.wait_window(dlg)
+        if dlg.result and dlg.result.strip():
+            new_name = dlg.result.strip()
+            rename_note(self._active.id, new_name)
+            self._active.name = new_name
             self._refresh_menu()
-            self._note_var.set(note.name)
-            self.app.save_config_only()
+            self._note_var.set(new_name)
 
     def _delete_note(self) -> None:
-        if not self._active_note_id or len(self.app.config.notes) <= 1:
+        if not self._active or len(self._notes) <= 1:
             return
-        self.app.config.notes = [
-            n for n in self.app.config.notes if n.id != self._active_note_id
-        ]
-        self._active_note_id = None
-        self.app.save_config_only()
+        delete_note(self._active.id)
+        self._notes = [n for n in self._notes if n.id != self._active.id]
+        self._active = None
         self._refresh_menu()
-        self._load_first_note()
+        self._load_note(self._notes[0])
 
-    # ── position persistence ──────────────────────────────────────────────────
+    # ── editor events ──────────────────────────────────────────────────────────
+
+    def _on_modified(self, _event=None) -> None:
+        if self._text.edit_modified():
+            self._saved_lbl.config(text="●")
+            self._save_active()
+            self._saved_lbl.config(text="")
+            self._text.edit_modified(False)
+
+    def _on_key_release(self, _event=None) -> None:
+        self._update_linenums()
+        self._update_status()
+        if self._find_visible and self._find_var.get():
+            self._do_highlight()
+
+    def _on_escape(self, _event=None) -> None:
+        if self._find_visible:
+            self._hide_find()
+
+    def _select_all(self) -> None:
+        self._text.tag_add(tk.SEL, "1.0", "end-1c")
+        self._text.mark_set(tk.INSERT, "end-1c")
+
+    def _update_linenums(self) -> None:
+        self._linenums.config(state="normal")
+        self._linenums.delete("1.0", "end")
+        total = int(self._text.index("end-1c").split(".")[0])
+        self._linenums.insert("1.0", "\n".join(str(i) for i in range(1, total + 1)))
+        self._linenums.config(state="disabled")
+        self._linenums.yview_moveto(self._text.yview()[0])
+
+    def _update_status(self, _event=None) -> None:
+        pos     = self._text.index(tk.INSERT)
+        ln, col = pos.split(".")
+        content = self._text.get("1.0", "end-1c")
+        chars   = len(content)
+        words   = len(content.split()) if content.strip() else 0
+        lines   = int(self._text.index("end-1c").split(".")[0])
+        self._status.config(
+            text=f"Ln {ln}, Col {int(col)+1}  |  {chars} chars  |  {words} words  |  {lines} lines"
+        )
+
+    # ── find / replace ────────────────────────────────────────────────────────
+
+    def _show_find(self) -> None:
+        if not self._find_visible:
+            # Insert find bar BEFORE the editor frame so it appears between toolbar and editor
+            self._find_bar.pack(fill="x", before=self._editor_frame)
+            self._find_visible = True
+        self._find_entry.focus_set()
+        self._find_entry.select_range(0, "end")
+        # If text is selected, pre-fill the find entry
+        try:
+            sel = self._text.get(tk.SEL_FIRST, tk.SEL_LAST)
+            if sel and "\n" not in sel:
+                self._find_var.set(sel)
+                self._find_entry.select_range(0, "end")
+                self._do_highlight()
+        except tk.TclError:
+            pass
+
+    def _hide_find(self) -> None:
+        if self._find_visible:
+            self._find_bar.pack_forget()
+            self._find_visible = False
+        self._text.tag_remove(_MATCH_TAG, "1.0", "end")
+        self._text.tag_remove(_MATCH_CUR, "1.0", "end")
+        self._find_count.config(text="")
+        self._text.focus_set()
+
+    def _toggle_find(self) -> None:
+        self._hide_find() if self._find_visible else self._show_find()
+
+    def _do_highlight(self) -> None:
+        self._text.tag_remove(_MATCH_TAG, "1.0", "end")
+        self._text.tag_remove(_MATCH_CUR, "1.0", "end")
+        self._find_results.clear()
+        pattern = self._find_var.get()
+        if not pattern:
+            self._find_count.config(text="")
+            return
+        nocase = not self._case_var.get()
+        start  = "1.0"
+        try:
+            re.compile(pattern)
+            use_re = False  # use tk.Text.search for correctness
+        except re.error:
+            use_re = False
+        while True:
+            pos = self._text.search(pattern, start, stopindex="end",
+                                    nocase=nocase, regexp=False)
+            if not pos:
+                break
+            end_i = f"{pos}+{len(pattern)}c"
+            self._text.tag_add(_MATCH_TAG, pos, end_i)
+            self._find_results.append(pos)
+            start = end_i
+        count = len(self._find_results)
+        if count == 0:
+            self._find_count.config(text="not found", fg="#cc5555")
+        else:
+            self._find_count.config(text=f"{count} found", fg="#557799")
+            self._find_idx = 0
+            self._jump_to_match(0)
+
+    def _find_step(self, direction: int) -> None:
+        if not self._find_results:
+            self._do_highlight()
+            return
+        self._find_idx = (self._find_idx + direction) % len(self._find_results)
+        self._jump_to_match(self._find_idx)
+
+    def _jump_to_match(self, idx: int) -> None:
+        self._text.tag_remove(_MATCH_CUR, "1.0", "end")
+        pos     = self._find_results[idx]
+        pattern = self._find_var.get()
+        end_i   = f"{pos}+{len(pattern)}c"
+        self._text.tag_add(_MATCH_CUR, pos, end_i)
+        self._text.see(pos)
+        self._text.mark_set(tk.INSERT, pos)
+        self._find_count.config(
+            text=f"{idx+1}/{len(self._find_results)}", fg="#557799")
+
+    def _replace_one(self) -> None:
+        if not self._find_results:
+            self._do_highlight()
+            return
+        idx     = self._find_idx % max(len(self._find_results), 1)
+        pos     = self._find_results[idx]
+        pattern = self._find_var.get()
+        repl    = self._repl_var.get()
+        self._text.delete(pos, f"{pos}+{len(pattern)}c")
+        self._text.insert(pos, repl)
+        self._save_active()
+        self._do_highlight()
+
+    def _replace_all(self) -> None:
+        pattern = self._find_var.get()
+        if not pattern:
+            return
+        nocase  = not self._case_var.get()
+        content = self._text.get("1.0", "end-1c")
+        flags   = re.IGNORECASE if nocase else 0
+        new_content = re.sub(re.escape(pattern), self._repl_var.get(),
+                             content, flags=flags)
+        if new_content == content:
+            return
+        self._text.delete("1.0", "end")
+        self._text.insert("1.0", new_content)
+        self._save_active()
+        self._do_highlight()
+
+    # ── go to line ────────────────────────────────────────────────────────────
+
+    def _go_to_line(self) -> None:
+        total = int(self._text.index("end-1c").split(".")[0])
+        dlg = _InputDialog(self, "Go to Line",
+                           f"Line number (1–{total}):", "")
+        self.wait_window(dlg)
+        if dlg.result and dlg.result.strip().isdigit():
+            ln = max(1, min(int(dlg.result.strip()), total))
+            self._text.mark_set(tk.INSERT, f"{ln}.0")
+            self._text.see(f"{ln}.0")
+            self._text.focus_set()
+            self._update_status()
+
+    # ── zoom / wrap ───────────────────────────────────────────────────────────
+
+    def _zoom_in(self) -> None:
+        if self._font_size < _MAX_FONT:
+            self._font_size += 1
+            self._apply_font()
+
+    def _zoom_out(self) -> None:
+        if self._font_size > _MIN_FONT:
+            self._font_size -= 1
+            self._apply_font()
+
+    def _apply_font(self) -> None:
+        f = (self._font_name, self._font_size)
+        self._text.configure(font=f)
+        self._linenums.configure(font=f)
+        self._update_linenums()
+
+    def _toggle_wrap(self) -> None:
+        self._wrap_mode = "none" if self._wrap_mode == "word" else "word"
+        self._text.configure(wrap=self._wrap_mode)
+        if self._wrap_mode == "word":
+            self._wrap_btn_tk.configure(text="Wrap ✓", bg="#1e3a2a", fg="#aaddaa")
+        else:
+            self._wrap_btn_tk.configure(text="Wrap ✗", bg="#3a2020", fg="#ddaaaa")
+
+    # ── options dialog ────────────────────────────────────────────────────────
+
+    def _open_options(self) -> None:
+        _OptionsDialog(self)
+
+    # ── scroll sync ───────────────────────────────────────────────────────────
+
+    def _scroll_both(self, *args) -> None:
+        self._text.yview(*args)
+        self._linenums.yview(*args)
+
+    # ── geometry / visibility ─────────────────────────────────────────────────
 
     def _on_configure(self, _event=None) -> None:
-        # Save geometry only when visible (not during withdraw/deiconify)
         if self.winfo_viewable():
             self.app.config.settings.notes_geometry = self.geometry()
-
-    # ── show / hide / toggle  (mirrors StatsWidget exactly) ──────────────────
 
     def show(self) -> None:
         self._visible = True
         self.deiconify()
+        # Force the window to the front even when another app has focus
+        self.wm_attributes("-topmost", True)
         self.lift()
-        self.after(80, self._focus_text)
+        self.focus_force()
+        # Remove always-on-top after it's raised so it doesn't stay above everything
+        self.after(300, lambda: self.wm_attributes("-topmost", False))
+        self.after(100, self._focus_text)
 
     def hide(self) -> None:
         self._visible = False
-        self._save_current()
-        self._on_configure()
+        self._save_active()
+        if self.winfo_viewable():
+            self.app.config.settings.notes_geometry = self.geometry()
         self.app.save_config_only()
         self.withdraw()
 
@@ -182,8 +561,100 @@ class NotesWindow(ctk.CTkToplevel):
 
     def _focus_text(self) -> None:
         self.focus_force()
-        self._text._textbox.focus_force()
+        self._text.focus_force()
 
+
+# ── Options dialog ────────────────────────────────────────────────────────────
+
+class _OptionsDialog(ctk.CTkToplevel):
+    def __init__(self, notes_win: NotesWindow) -> None:
+        super().__init__(notes_win)
+        self._nw = notes_win
+        self.title("Quick Notes — Options")
+        self.resizable(True, True)
+        self.wm_attributes("-topmost", True)
+        self._build()
+        self.update_idletasks()
+        self.geometry(f"420x{max(self.winfo_reqheight() + 30, 400)}")
+        self.after(120, self.grab_set)
+        self.lift()
+
+    def _build(self) -> None:
+        pad = {"padx": 20, "pady": 6}
+
+        ctk.CTkLabel(self, text="Font", font=ctk.CTkFont(size=13, weight="bold"),
+                     anchor="w").pack(fill="x", padx=20, pady=(16, 2))
+
+        font_row = ctk.CTkFrame(self, fg_color="transparent")
+        font_row.pack(fill="x", **pad)
+        ctk.CTkLabel(font_row, text="Family:", width=80, anchor="w").pack(side="left")
+        self._font_var = ctk.StringVar(value=self._nw._font_name)
+        ctk.CTkOptionMenu(font_row, variable=self._font_var,
+                          values=_FONTS, width=180).pack(side="left", padx=8)
+
+        size_row = ctk.CTkFrame(self, fg_color="transparent")
+        size_row.pack(fill="x", **pad)
+        ctk.CTkLabel(size_row, text="Size:", width=80, anchor="w").pack(side="left")
+        self._size_var = ctk.StringVar(value=str(self._nw._font_size))
+        ctk.CTkEntry(size_row, textvariable=self._size_var,
+                     width=60, height=28).pack(side="left", padx=8)
+
+        ctk.CTkLabel(self, text="Window Size",
+                     font=ctk.CTkFont(size=13, weight="bold"),
+                     anchor="w").pack(fill="x", padx=20, pady=(14, 2))
+
+        preset_row = ctk.CTkFrame(self, fg_color="transparent")
+        preset_row.pack(fill="x", **pad)
+        for label, geo in (("820×580", "820x580"), ("1200×800", "1200x800"),
+                           ("1400×900", "1400x900"), ("1600×1000", "1600x1000")):
+            ctk.CTkButton(
+                preset_row, text=label, width=86, height=28,
+                fg_color=("#1e2a3a", "#1e2a3a"),
+                hover_color=("#2a3a4a", "#2a3a4a"),
+                command=lambda g=geo: self._apply_geo(g),
+            ).pack(side="left", padx=3)
+
+        custom_row = ctk.CTkFrame(self, fg_color="transparent")
+        custom_row.pack(fill="x", **pad)
+        ctk.CTkLabel(custom_row, text="Custom:", width=70, anchor="w").pack(side="left")
+        current = self._nw.geometry().split("+")[0]
+        self._geo_var = ctk.StringVar(value=current)
+        ctk.CTkEntry(custom_row, textvariable=self._geo_var,
+                     width=120, height=28,
+                     placeholder_text="1200x800").pack(side="left", padx=6)
+        ctk.CTkButton(custom_row, text="Apply", width=70, height=28,
+                      command=lambda: self._apply_geo(self._geo_var.get())
+                      ).pack(side="left", padx=4)
+
+        btn_row = ctk.CTkFrame(self, fg_color="transparent")
+        btn_row.pack(pady=16)
+        ctk.CTkButton(btn_row, text="OK", width=90,
+                      command=self._ok).pack(side="left", padx=6)
+        ctk.CTkButton(btn_row, text="Cancel", width=90,
+                      fg_color=("#252535", "#252535"),
+                      command=self.destroy).pack(side="left", padx=6)
+
+    def _apply_geo(self, geo: str) -> None:
+        try:
+            w, h = geo.split("x")
+            self._nw.geometry(f"{int(w)}x{int(h)}")
+        except Exception:
+            pass
+
+    def _ok(self) -> None:
+        # Apply font
+        fname = self._font_var.get()
+        try:
+            fsize = max(_MIN_FONT, min(_MAX_FONT, int(self._size_var.get())))
+        except ValueError:
+            fsize = self._nw._font_size
+        self._nw._font_name = fname
+        self._nw._font_size = fsize
+        self._nw._apply_font()
+        self.destroy()
+
+
+# ── small input dialog ────────────────────────────────────────────────────────
 
 class _InputDialog(ctk.CTkToplevel):
     def __init__(self, parent, title: str, label: str, initial: str = "") -> None:
@@ -192,21 +663,27 @@ class _InputDialog(ctk.CTkToplevel):
         self.title(title)
         self.geometry("320x130")
         self.resizable(False, False)
-        self.attributes("-topmost", True)
+        self.wm_attributes("-topmost", True)
 
-        ctk.CTkLabel(self, text=label, font=ctk.CTkFont(size=13)).pack(padx=16, pady=(12, 4))
+        ctk.CTkLabel(self, text=label, font=ctk.CTkFont(size=13)).pack(
+            padx=16, pady=(12, 4))
         self._var = ctk.StringVar(value=initial)
-        ctk.CTkEntry(self, textvariable=self._var, width=280, height=30).pack(padx=16)
+        e = ctk.CTkEntry(self, textvariable=self._var, width=280, height=30)
+        e.pack(padx=16)
+        e.bind("<Return>", lambda _: self._ok())
 
         row = ctk.CTkFrame(self, fg_color="transparent")
         row.pack(pady=10)
-        ctk.CTkButton(row, text="OK", width=80, command=self._ok).pack(side="left", padx=4)
+        ctk.CTkButton(row, text="OK", width=80, command=self._ok).pack(
+            side="left", padx=4)
         ctk.CTkButton(row, text="Cancel", width=80,
-                      fg_color=("#252535","#252535"), hover_color=("#353548","#353548"),
+                      fg_color=("#252535", "#252535"),
+                      hover_color=("#353548", "#353548"),
                       command=self.destroy).pack(side="left", padx=4)
 
         self.after(120, self.grab_set)
         self.lift()
+        e.focus_set()
 
     def _ok(self) -> None:
         self.result = self._var.get()

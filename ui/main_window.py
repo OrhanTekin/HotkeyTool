@@ -56,6 +56,7 @@ class MainWindow(ctk.CTk):
         from ui.clipboard_tab import ClipboardTab
         from ui.snippets_tab  import SnippetsTab
         from ui.timer_tab     import TimerTab
+        from ui.planner_tab   import PlannerTab
 
         # ── Header bar ──
         header = ctk.CTkFrame(self, height=56, corner_radius=0,
@@ -94,7 +95,7 @@ class MainWindow(ctk.CTk):
         self._tabs = ctk.CTkTabview(self, corner_radius=8)
         self._tabs.pack(fill="both", expand=True, padx=12, pady=(8, 0))
 
-        for tab_name in ("Bindings", "Schedules", "Clipboard", "Snippets", "Timer", "Settings"):
+        for tab_name in ("Bindings", "Schedules", "Clipboard", "Snippets", "Timer", "Planner", "Settings"):
             self._tabs.add(tab_name)
 
         self._bindings_tab  = BindingsTab (self._tabs.tab("Bindings"),  self.app)
@@ -111,6 +112,9 @@ class MainWindow(ctk.CTk):
 
         self._timer_tab     = TimerTab    (self._tabs.tab("Timer"),     self.app)
         self._timer_tab.pack(fill="both", expand=True)
+
+        self._planner_tab   = PlannerTab  (self._tabs.tab("Planner"),   self.app)
+        self._planner_tab.pack(fill="both", expand=True)
 
         self._settings_tab  = SettingsTab (self._tabs.tab("Settings"),  self.app)
         self._settings_tab.pack(fill="both", expand=True)

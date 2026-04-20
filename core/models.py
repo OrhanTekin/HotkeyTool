@@ -161,6 +161,42 @@ class WindowLayout:
 
 
 @dataclass
+class Todo:
+    id: str
+    text: str
+    time_type: str = "none"    # "none" | "duration" | "timespan"
+    duration_mins: int = 0     # used when time_type == "duration"
+    start_time: str = ""       # "HH:MM"  used when time_type == "timespan"
+    end_time: str = ""         # "HH:MM"  used when time_type == "timespan"
+    date: str = ""             # "YYYY-MM-DD" when assigned, "" when unassigned
+    color: str = "#1e3a5f"
+    completed: bool = False
+
+    @classmethod
+    def new(cls, text: str = "") -> "Todo":
+        return cls(id=str(uuid.uuid4()), text=text)
+
+    def to_dict(self) -> dict:
+        return {"id": self.id, "text": self.text, "time_type": self.time_type,
+                "duration_mins": self.duration_mins,
+                "start_time": self.start_time, "end_time": self.end_time,
+                "date": self.date, "color": self.color,
+                "completed": self.completed}
+
+    @classmethod
+    def from_dict(cls, d: dict) -> "Todo":
+        return cls(id=d.get("id", str(uuid.uuid4())),
+                   text=d.get("text", ""),
+                   time_type=d.get("time_type", "none"),
+                   duration_mins=d.get("duration_mins", 0),
+                   start_time=d.get("start_time", ""),
+                   end_time=d.get("end_time", ""),
+                   date=d.get("date", ""),
+                   color=d.get("color", "#1e3a5f"),
+                   completed=d.get("completed", False))
+
+
+@dataclass
 class AppSettings:
     autostart: bool = False
     minimize_to_tray_on_close: bool = True
@@ -195,6 +231,7 @@ class AppConfig:
     layouts: List[WindowLayout] = field(default_factory=list)
     notes: List[Note] = field(default_factory=lambda: [Note.new("Quick Note")])
     clipboard_history: List[str] = field(default_factory=list)
+    todos: List[Todo] = field(default_factory=list)
 
     def to_dict(self) -> dict:
         return {"version": self.version, "listening": self.listening,
@@ -204,7 +241,8 @@ class AppConfig:
                 "snippets":  [s.to_dict() for s in self.snippets],
                 "layouts":   [l.to_dict() for l in self.layouts],
                 "notes":     [n.to_dict() for n in self.notes],
-                "clipboard_history": self.clipboard_history[:10]}
+                "clipboard_history": self.clipboard_history[:10],
+                "todos":     [t.to_dict() for t in self.todos]}
 
     @classmethod
     def from_dict(cls, d: dict) -> "AppConfig":
@@ -217,4 +255,5 @@ class AppConfig:
                    snippets=[Snippet.from_dict(s) for s in d.get("snippets", [])],
                    layouts=[WindowLayout.from_dict(l) for l in d.get("layouts", [])],
                    notes=notes,
-                   clipboard_history=d.get("clipboard_history", []))
+                   clipboard_history=d.get("clipboard_history", []),
+                   todos=[Todo.from_dict(t) for t in d.get("todos", [])])

@@ -62,6 +62,11 @@ class App:
         ctk.set_appearance_mode(self.config.settings.theme)
         ctk.set_default_color_theme("blue")
 
+        # One-time migration: move notes from config.json to individual .txt files
+        if self.config.notes:
+            from core.notes_manager import migrate_from_config
+            migrate_from_config([n.to_dict() for n in self.config.notes])
+
         self.window = MainWindow(self)
         if self._tray_only:
             self.window.withdraw()

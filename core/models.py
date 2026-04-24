@@ -164,13 +164,18 @@ class WindowLayout:
 class Todo:
     id: str
     text: str
-    time_type: str = "none"    # "none" | "duration" | "timespan"
-    duration_mins: int = 0     # used when time_type == "duration"
-    start_time: str = ""       # "HH:MM"  used when time_type == "timespan"
-    end_time: str = ""         # "HH:MM"  used when time_type == "timespan"
-    date: str = ""             # "YYYY-MM-DD" when assigned, "" when unassigned
+    time_type: str = "none"        # "none" | "duration" | "timespan"
+    duration_mins: int = 0         # total minutes (days*1440 + h*60 + m)
+    start_time: str = ""           # "HH:MM"
+    end_time: str = ""             # "HH:MM"
+    date: str = ""                 # "YYYY-MM-DD" or ""
     color: str = "#1e3a5f"
     completed: bool = False
+    priority: str = "medium"       # "low" | "medium" | "high"
+    category: str = ""             # free tag, matches planner_categories
+    recurrence: str = "none"       # "none" | "daily" | "weekly" | "monthly" | "yearly"
+    recurrence_days: List[int] = field(default_factory=list)  # 0=Mon…6=Sun for weekly
+    subtasks: List[dict] = field(default_factory=list)        # [{"id","text","completed"}]
 
     @classmethod
     def new(cls, text: str = "") -> "Todo":
@@ -180,8 +185,10 @@ class Todo:
         return {"id": self.id, "text": self.text, "time_type": self.time_type,
                 "duration_mins": self.duration_mins,
                 "start_time": self.start_time, "end_time": self.end_time,
-                "date": self.date, "color": self.color,
-                "completed": self.completed}
+                "date": self.date, "color": self.color, "completed": self.completed,
+                "priority": self.priority, "category": self.category,
+                "recurrence": self.recurrence, "recurrence_days": self.recurrence_days,
+                "subtasks": self.subtasks}
 
     @classmethod
     def from_dict(cls, d: dict) -> "Todo":
@@ -193,7 +200,12 @@ class Todo:
                    end_time=d.get("end_time", ""),
                    date=d.get("date", ""),
                    color=d.get("color", "#1e3a5f"),
-                   completed=d.get("completed", False))
+                   completed=d.get("completed", False),
+                   priority=d.get("priority", "medium"),
+                   category=d.get("category", ""),
+                   recurrence=d.get("recurrence", "none"),
+                   recurrence_days=d.get("recurrence_days", []),
+                   subtasks=d.get("subtasks", []))
 
 
 @dataclass
@@ -232,6 +244,8 @@ class AppConfig:
     notes: List[Note] = field(default_factory=lambda: [Note.new("Quick Note")])
     clipboard_history: List[str] = field(default_factory=list)
     todos: List[Todo] = field(default_factory=list)
+    planner_categories: List[str] = field(
+        default_factory=lambda: ["Work", "Personal", "Health", "Finance"])
 
     def to_dict(self) -> dict:
         return {"version": self.version, "listening": self.listening,
@@ -242,7 +256,8 @@ class AppConfig:
                 "layouts":   [l.to_dict() for l in self.layouts],
                 "notes":     [n.to_dict() for n in self.notes],
                 "clipboard_history": self.clipboard_history[:10],
-                "todos":     [t.to_dict() for t in self.todos]}
+                "todos":     [t.to_dict() for t in self.todos],
+                "planner_categories": self.planner_categories}
 
     @classmethod
     def from_dict(cls, d: dict) -> "AppConfig":
@@ -256,4 +271,6 @@ class AppConfig:
                    layouts=[WindowLayout.from_dict(l) for l in d.get("layouts", [])],
                    notes=notes,
                    clipboard_history=d.get("clipboard_history", []),
-                   todos=[Todo.from_dict(t) for t in d.get("todos", [])])
+                   todos=[Todo.from_dict(t) for t in d.get("todos", [])],
+                   planner_categories=d.get(
+                       "planner_categories", ["Work", "Personal", "Health", "Finance"]))

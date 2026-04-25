@@ -26,6 +26,8 @@ _TYPES = [
     ("Wait (ms)",            "wait"),
     ("Color Picker",         "color_picker"),
     ("Transform Text",       "text_transform"),
+    ("Gemini: Clipboard",    "gemini_clipboard"),
+    ("Gemini: Ask",          "gemini_ask"),
 ]
 
 # Common keys offered in the send_keys quick-picker
@@ -347,6 +349,25 @@ class ActionEditor(ctk.CTkFrame):
                 text_color=("#888899", "#888899"),
             ).pack(side="left", padx=4)
 
+        elif atype == "gemini_clipboard":
+            ctk.CTkLabel(
+                self.value_frame, text="Prompt:", width=52,
+                font=ctk.CTkFont(size=11),
+            ).pack(side="left")
+            ctk.CTkEntry(
+                self.value_frame, textvariable=self.value_var,
+                width=360, height=28,
+                placeholder_text="Leave empty for default  |  or: Translate to German:  |  Summarize:  |  Fix grammar:",
+            ).pack(side="left", padx=4)
+
+        elif atype == "gemini_ask":
+            ctk.CTkLabel(
+                self.value_frame,
+                text="Opens a floating window to ask Gemini anything. Set API key in Settings → Gemini AI.",
+                font=ctk.CTkFont(size=11),
+                text_color=("#888899", "#888899"),
+            ).pack(side="left", padx=4)
+
         elif atype == "replay_macro":
             self._refresh_macro_row()
 
@@ -425,7 +446,7 @@ class ActionEditor(ctk.CTkFrame):
             lbl   = self._system_var.get() if self._system_var else _SYSTEM_OPTS[0][0]
             value = _SYS_LABEL_TO_KEY.get(lbl, "lock")
         elif atype in ("toggle_topmost", "toggle_stats_widget", "show_notes_window",
-                       "color_picker", "text_transform"):
+                       "color_picker", "text_transform", "gemini_ask"):
             value = ""
         else:
             value = self.value_var.get().strip()

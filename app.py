@@ -49,9 +49,11 @@ class App:
         self._tray                        = None
 
         # Register callbacks so action_runner can reach UI-level services
-        register_app_callback("toggle_stats_widget",  self._cb_toggle_stats)
-        register_app_callback("show_notes_window",    self._cb_show_notes)
+        register_app_callback("toggle_stats_widget",   self._cb_toggle_stats)
+        register_app_callback("show_notes_window",     self._cb_show_notes)
         register_app_callback("show_transform_picker", self._cb_show_transform_picker)
+        register_app_callback("get_gemini_key",        lambda: self.config.settings.gemini_api_key)
+        register_app_callback("gemini_ask",            self._cb_gemini_ask)
 
     # ── lifecycle ─────────────────────────────────────────────────────────────
 
@@ -191,6 +193,16 @@ class App:
     def _open_transform_picker(self, trigger_hwnd: int) -> None:
         from ui.transform_picker import TransformPicker
         TransformPicker(self, trigger_hwnd)
+
+    # ── gemini ask window ─────────────────────────────────────────────────────
+
+    def _cb_gemini_ask(self) -> None:
+        if self.window:
+            self.window.after(0, self._open_gemini_ask)
+
+    def _open_gemini_ask(self) -> None:
+        from ui.gemini_ask_window import GeminiAskWindow
+        GeminiAskWindow(self)
 
     # ── stats widget ──────────────────────────────────────────────────────────
 

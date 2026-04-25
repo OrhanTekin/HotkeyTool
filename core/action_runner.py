@@ -90,6 +90,16 @@ def _dispatch(action: Action, trigger_hwnd: int = 0) -> None:
         _text_transform(action, trigger_hwnd)
         return
 
+    if action.type == "gemini_clipboard":
+        _gemini_clipboard(action)
+        return
+
+    if action.type == "gemini_ask":
+        fn = _app_callbacks.get("gemini_ask")
+        if fn:
+            fn()
+        return
+
     if action.type == "show_transform_picker":
         fn = _app_callbacks.get("show_transform_picker")
         if fn:
@@ -266,6 +276,30 @@ def _write_clipboard_text(text: str) -> None:
         user32.EmptyClipboard()
         user32.SetClipboardData(CF_UNICODETEXT, ctypes.c_void_p(h))
         user32.CloseClipboard()
+
+
+def _gemini_clipboard(action: Action) -> None:
+    """Send clipboard image or text to Gemini; replace clipboard with result."""
+    from core.gemini import call_gemini, clipboard_image, clipboard_text, DEFAULT_PROMPT
+    key = _app_callbacks.get("get_gemini_key", lambda: "")()
+    if not key:
+        _write_clipboard_text(
+            "[Gemini] No API key set. Add your free key in Settings → Gemini AI.")
+        return
+    prompt = action.value.strip() or DEFAULT_PROMPT
+    try:
+        img = clipboard_image()
+        if img:
+            result = call_gemini(key, prompt, img)
+        else:
+            text = clipboard_text()
+            if not text.strip():
+                _write_clipboard_text("[Gemini] Clipboard is empty.")
+                return
+            result = call_gemini(key, f"{prompt}\n\n{text}")
+        _write_clipboard_text(result)
+    except Exception as exc:
+        _write_clipboard_text(f"[Gemini Error] {exc}")
 
 
 def _system_action(action: Action) -> None:

@@ -215,13 +215,15 @@ class AppSettings:
     theme: str = "dark"
     stats_widget_on_startup: bool = False
     notes_geometry: str = ""
+    gemini_api_key: str = ""
 
     def to_dict(self) -> dict:
         return {"autostart": self.autostart,
                 "minimize_to_tray_on_close": self.minimize_to_tray_on_close,
                 "theme": self.theme,
                 "stats_widget_on_startup": self.stats_widget_on_startup,
-                "notes_geometry": self.notes_geometry}
+                "notes_geometry": self.notes_geometry,
+                "gemini_api_key": self.gemini_api_key}
 
     @classmethod
     def from_dict(cls, d: dict) -> "AppSettings":
@@ -229,7 +231,8 @@ class AppSettings:
                    minimize_to_tray_on_close=d.get("minimize_to_tray_on_close", True),
                    theme=d.get("theme", "dark"),
                    stats_widget_on_startup=d.get("stats_widget_on_startup", False),
-                   notes_geometry=d.get("notes_geometry", ""))
+                   notes_geometry=d.get("notes_geometry", ""),
+                   gemini_api_key=d.get("gemini_api_key", ""))
 
 
 @dataclass

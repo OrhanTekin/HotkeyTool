@@ -161,6 +161,38 @@ class SettingsTab(ctk.CTkFrame):
 
         self._divider(wrap)
 
+        # ── Gemini AI section ──────────────────────────────────────────────
+        self._section(wrap, "Gemini AI  (free tier)")
+
+        key_row = self._row(wrap)
+        ctk.CTkLabel(key_row, text="API Key",
+                     font=ctk.CTkFont(size=13)).pack(side="left")
+        self._gemini_key_var = ctk.StringVar(
+            value=self.app.config.settings.gemini_api_key)
+        ctk.CTkEntry(
+            key_row, textvariable=self._gemini_key_var,
+            width=260, height=30, show="•",
+            placeholder_text="Paste your free key here…",
+        ).pack(side="right", padx=(0, 6))
+        ctk.CTkButton(
+            key_row, text="Save", width=60, height=30,
+            command=self._save_gemini_key,
+        ).pack(side="right")
+
+        info_row = ctk.CTkFrame(wrap, fg_color=("#0f0f22", "#0f0f22"), corner_radius=6)
+        info_row.pack(fill="x", pady=(2, 0))
+        ctk.CTkLabel(
+            info_row,
+            text="Free key (no credit card): aistudio.google.com/apikey\n"
+                 "Actions: 'Gemini: Clipboard' — image/text → Gemini → clipboard\n"
+                 "         'Gemini: Ask'       — open floating chat window",
+            font=ctk.CTkFont(size=10),
+            text_color=("#555577", "#555577"),
+            justify="left", anchor="w",
+        ).pack(padx=10, pady=6, fill="x")
+
+        self._divider(wrap)
+
         # ── About section ──────────────────────────────────────────────────
         self._section(wrap, "About")
         about = ctk.CTkFrame(wrap, fg_color=("#0f0f22", "#0f0f22"), corner_radius=8)
@@ -326,6 +358,11 @@ class SettingsTab(ctk.CTkFrame):
         except Exception as exc:
             messagebox.showerror("Error", str(exc))
         self._refresh_ctxmenu_btn()
+
+    def _save_gemini_key(self) -> None:
+        self.app.config.settings.gemini_api_key = self._gemini_key_var.get().strip()
+        from core.config import save_config
+        save_config(self.app.config)
 
     def _export(self) -> None:
         path = filedialog.asksaveasfilename(

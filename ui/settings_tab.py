@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import os
+import tkinter as tk
+import webbrowser
 from pathlib import Path
 from tkinter import filedialog, messagebox
 from typing import TYPE_CHECKING
@@ -14,6 +17,7 @@ class SettingsTab(ctk.CTkFrame):
     def __init__(self, parent: ctk.CTkBaseClass, app: "App") -> None:
         super().__init__(parent, fg_color="transparent")
         self.app = app
+        self._tut_visible = False
         self._build()
 
     def _build(self) -> None:
@@ -91,16 +95,36 @@ class SettingsTab(ctk.CTkFrame):
             command=self._import,
         ).pack(side="right", padx=(0, 4))
 
-        # Config path info
+        # Config path info with selectable path + buttons
         from core.config import CONFIG_PATH
         info = ctk.CTkFrame(wrap, fg_color=("#0f0f22", "#0f0f22"), corner_radius=6)
         info.pack(fill="x", pady=(6, 0))
-        ctk.CTkLabel(
-            info, text=f"Config stored at:  {CONFIG_PATH}",
+        info_inner = ctk.CTkFrame(info, fg_color="transparent")
+        info_inner.pack(fill="x", padx=8, pady=6)
+
+        ctk.CTkLabel(info_inner, text="Config:",
+                     font=ctk.CTkFont(size=10),
+                     text_color=("#555577", "#555577")).pack(side="left")
+        self._config_path_var = tk.StringVar(value=str(CONFIG_PATH))
+        path_entry = tk.Entry(
+            info_inner, textvariable=self._config_path_var, state="readonly",
+            readonlybackground="#0f0f22", fg="#777799",
+            relief="flat", bd=0, highlightthickness=0,
+            font=("Consolas", 9),
+        )
+        path_entry.pack(side="left", fill="x", expand=True, padx=(4, 4))
+        ctk.CTkButton(
+            info_inner, text="Copy", width=50, height=24,
+            fg_color=("#1e2a3a", "#1e2a3a"), hover_color=("#2a3a4a", "#2a3a4a"),
             font=ctk.CTkFont(size=10),
-            text_color=("#555577", "#555577"),
-            anchor="w",
-        ).pack(padx=10, pady=6, fill="x")
+            command=lambda: self._copy_text(str(CONFIG_PATH)),
+        ).pack(side="right", padx=(2, 0))
+        ctk.CTkButton(
+            info_inner, text="Open Folder", width=90, height=24,
+            fg_color=("#1e2a3a", "#1e2a3a"), hover_color=("#2a3a4a", "#2a3a4a"),
+            font=ctk.CTkFont(size=10),
+            command=self._open_config_folder,
+        ).pack(side="right", padx=(4, 2))
 
         self._divider(wrap)
 
@@ -145,7 +169,6 @@ class SettingsTab(ctk.CTkFrame):
         self._classic_btn.pack(side="right", padx=(0, 4))
         self._refresh_classic_btn()
 
-        # Info label
         info_lbl = ctk.CTkLabel(
             wrap,
             text=(
@@ -164,32 +187,92 @@ class SettingsTab(ctk.CTkFrame):
         # ── Gemini AI section ──────────────────────────────────────────────
         self._section(wrap, "Gemini AI  (free tier)")
 
+        # API key row
         key_row = self._row(wrap)
         ctk.CTkLabel(key_row, text="API Key",
                      font=ctk.CTkFont(size=13)).pack(side="left")
-        self._gemini_key_var = ctk.StringVar(
-            value=self.app.config.settings.gemini_api_key)
-        ctk.CTkEntry(
-            key_row, textvariable=self._gemini_key_var,
-            width=260, height=30, show="•",
-            placeholder_text="Paste your free key here…",
-        ).pack(side="right", padx=(0, 6))
         ctk.CTkButton(
             key_row, text="Save", width=60, height=30,
             command=self._save_gemini_key,
         ).pack(side="right")
+        self._key_show_btn = ctk.CTkButton(
+            key_row, text="Show", width=55, height=30,
+            fg_color=("#1e2a3a", "#1e2a3a"), hover_color=("#2a3a4a", "#2a3a4a"),
+            command=self._toggle_key_visibility,
+        )
+        self._key_show_btn.pack(side="right", padx=(0, 4))
+        self._gemini_key_var = ctk.StringVar(
+            value=self.app.config.settings.gemini_api_key)
+        self._key_entry = ctk.CTkEntry(
+            key_row, textvariable=self._gemini_key_var,
+            width=210, height=30, show="•",
+            placeholder_text="Paste your free key here…",
+        )
+        self._key_entry.pack(side="right", padx=(0, 4))
 
-        info_row = ctk.CTkFrame(wrap, fg_color=("#0f0f22", "#0f0f22"), corner_radius=6)
-        info_row.pack(fill="x", pady=(2, 0))
+        # Info card
+        info_outer = ctk.CTkFrame(wrap, fg_color=("#0f0f22", "#0f0f22"), corner_radius=6)
+        info_outer.pack(fill="x", pady=(4, 0))
+
+        # Clickable URL + copy
+        url_row = ctk.CTkFrame(info_outer, fg_color="transparent")
+        url_row.pack(fill="x", padx=10, pady=(8, 2))
+        ctk.CTkLabel(url_row, text="Free key (no credit card):",
+                     font=ctk.CTkFont(size=10),
+                     text_color=("#555577", "#555577")).pack(side="left")
+        ctk.CTkButton(
+            url_row, text="aistudio.google.com/apikey",
+            font=ctk.CTkFont(size=10),
+            fg_color="transparent", hover_color=("#1a1a2e", "#1a1a2e"),
+            text_color=("#5588dd", "#5588dd"),
+            width=10, height=22, cursor="hand2",
+            command=lambda: webbrowser.open("https://aistudio.google.com/apikey"),
+        ).pack(side="left", padx=(2, 2))
+        ctk.CTkButton(
+            url_row, text="Copy URL", width=70, height=22,
+            fg_color=("#1e2a3a", "#1e2a3a"), hover_color=("#2a3a4a", "#2a3a4a"),
+            font=ctk.CTkFont(size=10),
+            command=lambda: self._copy_text("https://aistudio.google.com/apikey"),
+        ).pack(side="left", padx=2)
+
+        # Tutorial toggle
+        tut_header = ctk.CTkFrame(info_outer, fg_color="transparent")
+        tut_header.pack(fill="x", padx=10, pady=(2, 0))
+        self._tut_btn = ctk.CTkButton(
+            tut_header, text="▶  Setup Tutorial",
+            font=ctk.CTkFont(size=10),
+            fg_color="transparent", hover_color=("#1a1a2e", "#1a1a2e"),
+            text_color=("#6677aa", "#6677aa"),
+            anchor="w", width=10, height=22,
+            command=self._toggle_tutorial,
+        )
+        self._tut_btn.pack(side="left")
+
+        # Tutorial content frame (hidden initially)
+        self._tut_frame = ctk.CTkFrame(info_outer,
+                                       fg_color=("#0a0a1a", "#0a0a1a"),
+                                       corner_radius=4)
         ctk.CTkLabel(
-            info_row,
-            text="Free key (no credit card): aistudio.google.com/apikey\n"
-                 "Actions: 'Gemini: Clipboard' — image/text → Gemini → clipboard\n"
+            self._tut_frame,
+            text=(
+                "1.  Click 'Create API Key'\n"
+                "2.  Select 'Default Gemini Project'  →  Create\n"
+                "3.  Copy the API key and paste it in the field above"
+            ),
+            font=ctk.CTkFont(size=10),
+            text_color=("#8899bb", "#8899bb"),
+            justify="left", anchor="w",
+        ).pack(padx=14, pady=8, fill="x")
+
+        # Actions description
+        ctk.CTkLabel(
+            info_outer,
+            text="Actions: 'Gemini: Clipboard' — image/text → Gemini → clipboard\n"
                  "         'Gemini: Ask'       — open floating chat window",
             font=ctk.CTkFont(size=10),
             text_color=("#555577", "#555577"),
             justify="left", anchor="w",
-        ).pack(padx=10, pady=6, fill="x")
+        ).pack(padx=10, pady=(2, 8), fill="x")
 
         self._divider(wrap)
 
@@ -363,6 +446,33 @@ class SettingsTab(ctk.CTkFrame):
         self.app.config.settings.gemini_api_key = self._gemini_key_var.get().strip()
         from core.config import save_config
         save_config(self.app.config)
+        self.focus_set()
+
+    def _toggle_key_visibility(self) -> None:
+        if self._key_entry.cget("show") == "•":
+            self._key_entry.configure(show="")
+            self._key_show_btn.configure(text="Hide")
+        else:
+            self._key_entry.configure(show="•")
+            self._key_show_btn.configure(text="Show")
+
+    def _toggle_tutorial(self) -> None:
+        if self._tut_visible:
+            self._tut_frame.pack_forget()
+            self._tut_btn.configure(text="▶  Setup Tutorial")
+            self._tut_visible = False
+        else:
+            self._tut_frame.pack(fill="x", padx=10, pady=(0, 4))
+            self._tut_btn.configure(text="▼  Setup Tutorial")
+            self._tut_visible = True
+
+    def _copy_text(self, text: str) -> None:
+        self.clipboard_clear()
+        self.clipboard_append(text)
+
+    def _open_config_folder(self) -> None:
+        from core.config import CONFIG_PATH
+        os.startfile(str(CONFIG_PATH.parent))
 
     def _export(self) -> None:
         path = filedialog.asksaveasfilename(

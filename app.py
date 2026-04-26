@@ -263,8 +263,8 @@ class App:
         A sleeping thread that wakes up much later than expected means the OS
         suspended the machine.
         """
-        POLL_S  = 10   # check interval
-        GRACE_S = 15   # if sleep() runs this many seconds over, assume suspend
+        POLL_S  = 2    # check interval
+        GRACE_S = 3    # if sleep() runs this many seconds over, assume suspend
 
         def _monitor() -> None:
             while True:
@@ -272,7 +272,7 @@ class App:
                 time.sleep(POLL_S)
                 if time.monotonic() - t0 > POLL_S + GRACE_S:
                     if self.window:
-                        self.window.after(1500, self.on_system_resume)
+                        self.window.after(300, self.on_system_resume)
 
         threading.Thread(target=_monitor, daemon=True).start()
 

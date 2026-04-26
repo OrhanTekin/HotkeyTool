@@ -1,6 +1,6 @@
-﻿"""
+"""
 Gemini free-tier helper.
-Uses stdlib urllib only â€” no extra SDK dependency.
+Uses stdlib urllib only - no extra SDK dependency.
 Requires Pillow for clipboard image capture (pip install Pillow).
 """
 from __future__ import annotations
@@ -24,7 +24,7 @@ DEFAULT_PROMPT = (
     "Give me the exact content of what I sent in a clean, formatted form. "
     "If it contains text or code, extract it exactly. "
     "If it is a table or structured data, preserve the layout. "
-    "Output only the content â€” no explanations."
+    "Output only the content - no explanations."
 )
 
 
@@ -92,7 +92,10 @@ def clipboard_text() -> str:
     CF_UNICODETEXT = 13
     user32   = ctypes.windll.user32
     kernel32 = ctypes.windll.kernel32
-    kernel32.GlobalLock.restype = ctypes.c_void_p
+    user32.GetClipboardData.restype  = ctypes.c_void_p
+    kernel32.GlobalLock.restype      = ctypes.c_void_p
+    kernel32.GlobalLock.argtypes     = [ctypes.c_void_p]
+    kernel32.GlobalUnlock.argtypes   = [ctypes.c_void_p]
     if not user32.OpenClipboard(None):
         return ""
     try:

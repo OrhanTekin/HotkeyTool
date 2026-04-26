@@ -7,6 +7,7 @@ from typing import Callable
 
 import customtkinter as ctk
 
+from core.gemini import DEFAULT_PROMPT
 from core.models import Action
 
 # ── constants ────────────────────────────────────────────────────────────────
@@ -350,6 +351,8 @@ class ActionEditor(ctk.CTkFrame):
             ).pack(side="left", padx=4)
 
         elif atype == "gemini_clipboard":
+            if not self.value_var.get():
+                self.value_var.set(DEFAULT_PROMPT)
             ctk.CTkLabel(
                 self.value_frame, text="Prompt:", width=52,
                 font=ctk.CTkFont(size=11),
@@ -357,7 +360,6 @@ class ActionEditor(ctk.CTkFrame):
             ctk.CTkEntry(
                 self.value_frame, textvariable=self.value_var,
                 width=360, height=28,
-                placeholder_text="Leave empty for default  |  or: Translate to German:  |  Summarize:  |  Fix grammar:",
             ).pack(side="left", padx=4)
 
         elif atype == "gemini_ask":

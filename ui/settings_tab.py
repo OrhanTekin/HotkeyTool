@@ -24,6 +24,8 @@ class SettingsTab(ctk.CTkFrame):
         wrap = ctk.CTkScrollableFrame(self, fg_color="transparent")
         wrap.pack(fill="both", expand=True, padx=36, pady=16)
 
+        _light = ctk.get_appearance_mode() == "Light"
+
         # ── Behaviour section ──────────────────────────────────────────────
         self._section(wrap, "Behaviour")
 
@@ -62,21 +64,6 @@ class SettingsTab(ctk.CTkFrame):
             command=self._toggle_stats_startup,
         ).pack(side="right")
 
-        r_theme = self._row(wrap)
-        ctk.CTkLabel(r_theme, text="UI Theme",
-                     font=ctk.CTkFont(size=13)).pack(side="left")
-        cur_theme = self.app.config.settings.theme.capitalize()
-        if cur_theme not in ("Dark", "Light", "System"):
-            cur_theme = "Dark"
-        self._theme_seg = ctk.CTkSegmentedButton(
-            r_theme,
-            values=["Dark", "Light", "System"],
-            command=self._change_theme,
-            width=220, height=30,
-        )
-        self._theme_seg.set(cur_theme)
-        self._theme_seg.pack(side="right")
-
         self._divider(wrap)
 
         # ── Data section ───────────────────────────────────────────────────
@@ -97,7 +84,7 @@ class SettingsTab(ctk.CTkFrame):
 
         # Config path info with selectable path + buttons
         from core.config import CONFIG_PATH
-        info = ctk.CTkFrame(wrap, fg_color=("#0f0f22", "#0f0f22"), corner_radius=6)
+        info = ctk.CTkFrame(wrap, corner_radius=6)
         info.pack(fill="x", pady=(6, 0))
         info_inner = ctk.CTkFrame(info, fg_color="transparent")
         info_inner.pack(fill="x", padx=8, pady=6)
@@ -106,9 +93,11 @@ class SettingsTab(ctk.CTkFrame):
                      font=ctk.CTkFont(size=10),
                      text_color=("#555577", "#555577")).pack(side="left")
         self._config_path_var = tk.StringVar(value=str(CONFIG_PATH))
+        _card_bg = info.cget("fg_color")
         path_entry = tk.Entry(
             info_inner, textvariable=self._config_path_var, state="readonly",
-            readonlybackground="#0f0f22", fg="#777799",
+            readonlybackground="#ebebeb" if _light else "#2b2b2b",
+            fg="#444466" if _light else "#777799",
             relief="flat", bd=0, highlightthickness=0,
             font=("Consolas", 9),
         )
@@ -211,7 +200,7 @@ class SettingsTab(ctk.CTkFrame):
         self._key_entry.pack(side="right", padx=(0, 4))
 
         # Info card
-        info_outer = ctk.CTkFrame(wrap, fg_color=("#0f0f22", "#0f0f22"), corner_radius=6)
+        info_outer = ctk.CTkFrame(wrap, corner_radius=6)
         info_outer.pack(fill="x", pady=(4, 0))
 
         # Clickable URL + copy
@@ -249,9 +238,7 @@ class SettingsTab(ctk.CTkFrame):
         self._tut_btn.pack(side="left")
 
         # Tutorial content frame (hidden initially)
-        self._tut_frame = ctk.CTkFrame(info_outer,
-                                       fg_color=("#0a0a1a", "#0a0a1a"),
-                                       corner_radius=4)
+        self._tut_frame = ctk.CTkFrame(info_outer, corner_radius=4)
         ctk.CTkLabel(
             self._tut_frame,
             text=(
@@ -278,7 +265,7 @@ class SettingsTab(ctk.CTkFrame):
 
         # ── About section ──────────────────────────────────────────────────
         self._section(wrap, "About")
-        about = ctk.CTkFrame(wrap, fg_color=("#0f0f22", "#0f0f22"), corner_radius=8)
+        about = ctk.CTkFrame(wrap, corner_radius=8)
         about.pack(fill="x")
         ctk.CTkLabel(
             about,
@@ -327,14 +314,6 @@ class SettingsTab(ctk.CTkFrame):
 
     def _toggle_stats_startup(self) -> None:
         self.app.config.settings.stats_widget_on_startup = self._stats_var.get()
-        from core.config import save_config
-        save_config(self.app.config)
-
-    def _change_theme(self, value: str) -> None:
-        import customtkinter as ctk
-        theme = value.lower()
-        ctk.set_appearance_mode(theme)
-        self.app.config.settings.theme = theme
         from core.config import save_config
         save_config(self.app.config)
 

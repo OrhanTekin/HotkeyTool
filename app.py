@@ -61,7 +61,7 @@ class App:
         from ui.main_window import MainWindow
         from ui.tray import TrayIcon
 
-        ctk.set_appearance_mode(self.config.settings.theme)
+        ctk.set_appearance_mode("dark")
         ctk.set_default_color_theme("blue")
 
         # One-time migration: move notes from config.json to individual .txt files
@@ -259,20 +259,22 @@ class App:
     def _start_sleep_detector(self) -> None:
         """Fallback sleep detection via monotonic-clock jump.
 
-        WM_POWERBROADCAST is unreliable when the window is hidden in the tray.
-        A sleeping thread that wakes up much later than expected means the OS
-        suspended the machine.
+        WM_POWERBROADCAST (main_window.py) is the primary wake signal.
+        This fallback catches cases where the window is fully hidden/minimized.
+        A startup grace period prevents false positives during slow boot.
         """
-        POLL_S  = 2    # check interval
-        GRACE_S = 3    # if sleep() runs this many seconds over, assume suspend
+        POLL_S       = 2    # check interval
+        GRACE_S      = 8    # extra seconds before assuming suspend (threshold = POLL_S + GRACE_S)
+        STARTUP_WAIT = 30   # skip checks for this long after launch to avoid boot false-positives
 
         def _monitor() -> None:
+            time.sleep(STARTUP_WAIT)
             while True:
                 t0 = time.monotonic()
                 time.sleep(POLL_S)
                 if time.monotonic() - t0 > POLL_S + GRACE_S:
                     if self.window:
-                        self.window.after(300, self.on_system_resume)
+                        self.window.after(1000, self.on_system_resume)
 
         threading.Thread(target=_monitor, daemon=True).start()
 

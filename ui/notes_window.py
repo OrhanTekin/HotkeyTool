@@ -12,6 +12,7 @@ Features
 • Full undo / redo  (Ctrl+Z / Ctrl+Y)
 • Select all  (Ctrl+A)
 • Go to line  (Ctrl+G)
+• Ctrl+Left / Right  (word navigation that respects line boundaries)
 • Auto-save on every keystroke
 • Options dialog  (⚙ button)
 • Default size  1200 × 800
@@ -40,16 +41,82 @@ if TYPE_CHECKING:
 _DEFAULT_GEO  = "1200x800"
 _MIN_FONT     = 8
 _MAX_FONT     = 36
-_DARK_BG      = "#0d0d1e"
-_DARK_FG      = "#d8d8f8"
-_GUTTER_BG    = "#0a0a16"
-_GUTTER_FG    = "#3a3a5a"
-_CURSOR_CLR   = "#7799cc"
-_SEL_BG       = "#1e3a6e"
 _MATCH_TAG    = "match"
 _MATCH_CUR    = "match_cur"
 
 _FONTS = ["Consolas", "Cascadia Code", "Courier New", "Lucida Console"]
+
+
+def _mk_colors(mode: str) -> dict:
+    """Return a theme-appropriate color palette."""
+    if mode != "Light":
+        return {
+            "bg":          "#0d0d1e",
+            "fg":          "#d8d8f8",
+            "gutter_bg":   "#0a0a16",
+            "gutter_fg":   "#3a3a5a",
+            "cursor":      "#7799cc",
+            "sel_bg":      "#1e3a6e",
+            "toolbar_bg":  "#0f0f22",
+            "bar_bg":      "#080816",
+            "btn_bg":      "#1e2a3a",
+            "btn_fg":      "#c0c0e0",
+            "btn_abg":     "#2a3a4a",
+            "btn_afg":     "#ffffff",
+            "add_bg":      "#163a22",
+            "del_bg":      "#5c1a1a",
+            "wrap_on_bg":  "#1e3a2a",
+            "wrap_on_fg":  "#aaddaa",
+            "wrap_off_bg": "#3a2020",
+            "wrap_off_fg": "#ddaaaa",
+            "border":      "#1e1e38",
+            "match_bg":    "#3a3a1a",
+            "match_fg":    "#ffdd88",
+            "mcur_bg":     "#7a6020",
+            "mcur_fg":     "#ffffff",
+            "lbl_fg":      "#9999bb",
+            "ent_bg":      "#141428",
+            "ent_hi":      "#2a2a4a",
+            "ent_hia":     "#4a4a8a",
+            "cnt_fg":      "#557799",
+            "close_bg":    "#3a1616",
+            "status_fg":   "#444466",
+            "saved_fg":    "#997755",
+        }
+    else:
+        return {
+            "bg":          "#f5f5fa",
+            "fg":          "#1a1a2e",
+            "gutter_bg":   "#e8e8f0",
+            "gutter_fg":   "#888899",
+            "cursor":      "#3366cc",
+            "sel_bg":      "#b0c8f0",
+            "toolbar_bg":  "#dde0ea",
+            "bar_bg":      "#e8eaf0",
+            "btn_bg":      "#c8d0e0",
+            "btn_fg":      "#1a1a3a",
+            "btn_abg":     "#b0b8cc",
+            "btn_afg":     "#000000",
+            "add_bg":      "#b0d8ba",
+            "del_bg":      "#e8b0b0",
+            "wrap_on_bg":  "#b0d8ba",
+            "wrap_on_fg":  "#1a5a2a",
+            "wrap_off_bg": "#e8b0b0",
+            "wrap_off_fg": "#7a2020",
+            "border":      "#c0c0d8",
+            "match_bg":    "#f0e060",
+            "match_fg":    "#3a3000",
+            "mcur_bg":     "#d09010",
+            "mcur_fg":     "#000000",
+            "lbl_fg":      "#444466",
+            "ent_bg":      "#ffffff",
+            "ent_hi":      "#b0b8cc",
+            "ent_hia":     "#4477aa",
+            "cnt_fg":      "#336699",
+            "close_bg":    "#e8b0b0",
+            "status_fg":   "#555577",
+            "saved_fg":    "#aa7733",
+        }
 
 
 class NotesWindow(ctk.CTkToplevel):
@@ -73,6 +140,7 @@ class NotesWindow(ctk.CTkToplevel):
 
         self.protocol("WM_DELETE_WINDOW", self.hide)
         self.bind("<Configure>", self._on_configure)
+        self._C = _mk_colors(ctk.get_appearance_mode())
         self._build()
         self._reload_notes()
         self.withdraw()
@@ -80,19 +148,21 @@ class NotesWindow(ctk.CTkToplevel):
     # ── layout ────────────────────────────────────────────────────────────────
 
     def _build(self) -> None:
+        C = self._C
+
         # ── Toolbar ──
-        tb = tk.Frame(self, bg="#0f0f22", height=44)
+        tb = tk.Frame(self, bg=C["toolbar_bg"], height=44)
         tb.pack(fill="x", side="top")
         tb.pack_propagate(False)
         self._tb = tb
 
-        def _tb_btn(parent, text, cmd, bg="#1e2a3a", width=6, fg="#c0c0e0"):
+        def _tb_btn(parent, text, cmd, bg=C["btn_bg"], width=6, fg=C["btn_fg"]):
             return tk.Button(parent, text=text, command=cmd,
-                             bg=bg, fg=fg, activebackground="#2a3a4a",
-                             activeforeground="#ffffff", relief="flat",
+                             bg=bg, fg=fg, activebackground=C["btn_abg"],
+                             activeforeground=C["btn_afg"], relief="flat",
                              font=("Segoe UI", 10), width=width, cursor="hand2")
 
-        _tb_btn(tb, "+", self._new_note, bg="#163a22", width=3).pack(
+        _tb_btn(tb, "+", self._new_note, bg=C["add_bg"], width=3).pack(
             side="left", padx=(6, 2), pady=8)
 
         self._note_var  = ctk.StringVar()
@@ -103,7 +173,7 @@ class NotesWindow(ctk.CTkToplevel):
         self._note_menu.pack(side="left", padx=4, pady=8)
 
         _tb_btn(tb, "Rename", self._rename_note, width=8).pack(side="left", padx=2)
-        _tb_btn(tb, "Delete", self._delete_note, bg="#5c1a1a", width=7).pack(side="left", padx=2)
+        _tb_btn(tb, "Delete", self._delete_note, bg=C["del_bg"], width=7).pack(side="left", padx=2)
 
         # Right-side toolbar buttons
         _tb_btn(tb, "⚙", self._open_options, width=3).pack(side="right", padx=(2, 14), pady=8)
@@ -112,9 +182,9 @@ class NotesWindow(ctk.CTkToplevel):
 
         self._wrap_btn_tk = tk.Button(
             tb, text="Wrap ✓", command=self._toggle_wrap,
-            bg="#1e3a2a", fg="#aaddaa", activebackground="#2a4a38",
-            activeforeground="#ffffff", relief="flat",
-            font=("Segoe UI", 10), width=7, cursor="hand2",
+            bg=C["wrap_on_bg"], fg=C["wrap_on_fg"],
+            activebackground=C["btn_abg"], activeforeground=C["btn_afg"],
+            relief="flat", font=("Segoe UI", 10), width=7, cursor="hand2",
         )
         self._wrap_btn_tk.pack(side="right", padx=2)
 
@@ -122,26 +192,26 @@ class NotesWindow(ctk.CTkToplevel):
         _tb_btn(tb, "Go to line", self._go_to_line, width=10).pack(side="right", padx=2)
 
         # ── Find / Replace bar (hidden initially, placed between toolbar and editor) ──
-        self._find_bar = tk.Frame(self, bg="#080816")
+        self._find_bar = tk.Frame(self, bg=C["bar_bg"])
 
-        fi = tk.Frame(self._find_bar, bg="#080816")
+        fi = tk.Frame(self._find_bar, bg=C["bar_bg"])
         fi.pack(fill="x", padx=6, pady=5)
 
         def _lbl(text):
-            return tk.Label(fi, text=text, bg="#080816", fg="#9999bb",
+            return tk.Label(fi, text=text, bg=C["bar_bg"], fg=C["lbl_fg"],
                             font=("Segoe UI", 10))
 
         def _entry(var, w):
             e = tk.Entry(fi, textvariable=var, width=w,
-                         bg="#141428", fg="#d8d8f8", insertbackground="#7799cc",
+                         bg=C["ent_bg"], fg=C["fg"], insertbackground=C["cursor"],
                          relief="flat", font=("Consolas", 10), borderwidth=0,
-                         highlightthickness=1, highlightbackground="#2a2a4a",
-                         highlightcolor="#4a4a8a")
+                         highlightthickness=1, highlightbackground=C["ent_hi"],
+                         highlightcolor=C["ent_hia"])
             return e
 
-        def _fbtn(text, cmd, bg="#1e2a3a", w=8):
+        def _fbtn(text, cmd, bg=C["btn_bg"], w=8):
             return tk.Button(fi, text=text, command=cmd,
-                             bg=bg, fg="#c0c0e0", activebackground="#2a3a5a",
+                             bg=bg, fg=C["btn_fg"], activebackground=C["btn_abg"],
                              relief="flat", font=("Segoe UI", 9), width=w, cursor="hand2")
 
         _lbl("Find:").pack(side="left")
@@ -159,12 +229,12 @@ class NotesWindow(ctk.CTkToplevel):
         tk.Checkbutton(
             fi, text="Aa", variable=self._case_var,
             command=self._do_highlight,
-            bg="#080816", fg="#9999bb", selectcolor="#141428",
-            activebackground="#080816", relief="flat",
+            bg=C["bar_bg"], fg=C["lbl_fg"], selectcolor=C["ent_bg"],
+            activebackground=C["bar_bg"], relief="flat",
             font=("Segoe UI", 9),
         ).pack(side="left", padx=4)
 
-        self._find_count = tk.Label(fi, text="", bg="#080816", fg="#557799",
+        self._find_count = tk.Label(fi, text="", bg=C["bar_bg"], fg=C["cnt_fg"],
                                     font=("Segoe UI", 9), width=10, anchor="w")
         self._find_count.pack(side="left", padx=(4, 8))
 
@@ -175,48 +245,48 @@ class NotesWindow(ctk.CTkToplevel):
         self._repl_entry.bind("<Return>",   lambda e: self._replace_one())
         self._repl_entry.bind("<KP_Enter>", lambda e: self._replace_one())
 
-        _fbtn("Replace",    self._replace_one, bg="#1e3a2a", w=8).pack(side="left", padx=2)
-        _fbtn("Replace All", self._replace_all, bg="#1e3a2a", w=10).pack(side="left", padx=1)
-        _fbtn("✕", self._hide_find, bg="#3a1616", w=2).pack(side="right", padx=4)
+        _fbtn("Replace",     self._replace_one, bg=C["add_bg"], w=8).pack(side="left", padx=2)
+        _fbtn("Replace All", self._replace_all, bg=C["add_bg"], w=10).pack(side="left", padx=1)
+        _fbtn("✕", self._hide_find, bg=C["close_bg"], w=2).pack(side="right", padx=4)
 
         # ── Status bar (packed to bottom BEFORE editor so it stays fixed) ──
-        sf = tk.Frame(self, bg="#080816", height=24)
+        sf = tk.Frame(self, bg=C["bar_bg"], height=24)
         sf.pack(fill="x", side="bottom")
         sf.pack_propagate(False)
         self._status = tk.Label(
             sf, text="Ln 1, Col 1  |  0 chars  |  0 words",
-            bg="#080816", fg="#444466", font=("Segoe UI", 9), anchor="w",
+            bg=C["bar_bg"], fg=C["status_fg"], font=("Segoe UI", 9), anchor="w",
         )
         self._status.pack(side="left", padx=10)
         self._saved_lbl = tk.Label(
             sf, text="",
-            bg="#080816", fg="#997755", font=("Segoe UI", 9), anchor="e",
+            bg=C["bar_bg"], fg=C["saved_fg"], font=("Segoe UI", 9), anchor="e",
         )
         self._saved_lbl.pack(side="right", padx=10)
 
         # ── Editor area ──
-        editor = tk.Frame(self, bg=_GUTTER_BG)
+        editor = tk.Frame(self, bg=C["gutter_bg"])
         editor.pack(fill="both", expand=True)
-        self._editor_frame = editor  # stored so find bar can pack before it
+        self._editor_frame = editor
 
         self._linenums = tk.Text(
             editor,
             width=4, padx=6, pady=4,
-            bg=_GUTTER_BG, fg=_GUTTER_FG,
-            selectbackground=_GUTTER_BG, selectforeground=_GUTTER_FG,
+            bg=C["gutter_bg"], fg=C["gutter_fg"],
+            selectbackground=C["gutter_bg"], selectforeground=C["gutter_fg"],
             font=(self._font_name, self._font_size),
             state="disabled", cursor="arrow",
             relief="flat", borderwidth=0, wrap="none",
         )
         self._linenums.pack(side="left", fill="y")
-        tk.Frame(editor, width=1, bg="#1e1e38").pack(side="left", fill="y")
+        tk.Frame(editor, width=1, bg=C["border"]).pack(side="left", fill="y")
 
         self._text = tk.Text(
             editor,
             padx=10, pady=4,
-            bg=_DARK_BG, fg=_DARK_FG,
-            insertbackground=_CURSOR_CLR,
-            selectbackground=_SEL_BG, selectforeground=_DARK_FG,
+            bg=C["bg"], fg=C["fg"],
+            insertbackground=C["cursor"],
+            selectbackground=C["sel_bg"], selectforeground=C["fg"],
             font=(self._font_name, self._font_size),
             relief="flat", borderwidth=0,
             wrap=self._wrap_mode,
@@ -224,9 +294,9 @@ class NotesWindow(ctk.CTkToplevel):
             tabs=("1c",),
         )
         self._text.tag_configure(_MATCH_TAG,
-                                 background="#3a3a1a", foreground="#ffdd88")
+                                 background=C["match_bg"], foreground=C["match_fg"])
         self._text.tag_configure(_MATCH_CUR,
-                                 background="#7a6020", foreground="#ffffff")
+                                 background=C["mcur_bg"], foreground=C["mcur_fg"])
 
         vsb = ctk.CTkScrollbar(editor, command=self._scroll_both)
         vsb.pack(side="right", fill="y")
@@ -238,24 +308,35 @@ class NotesWindow(ctk.CTkToplevel):
         self._text.pack(side="left", fill="both", expand=True)
 
         # ── Key / event bindings ──
-        self._text.bind("<<Modified>>",    self._on_modified)
-        self._text.bind("<KeyRelease>",    self._on_key_release)
-        self._text.bind("<ButtonRelease>", self._update_status)
-        self._text.bind("<Control-z>",     lambda e: "break")   # let tk handle undo
-        self._text.bind("<Control-y>",     lambda e: (self._text.edit_redo(), "break"))
-        self._text.bind("<Control-Y>",     lambda e: (self._text.edit_redo(), "break"))
-        self._text.bind("<Control-a>",     lambda e: (self._select_all(), "break"))
-        self._text.bind("<Control-A>",     lambda e: (self._select_all(), "break"))
-        self._text.bind("<Control-f>",     lambda e: (self._show_find(), "break"))
-        self._text.bind("<Control-F>",     lambda e: (self._show_find(), "break"))
-        self._text.bind("<Control-h>",     lambda e: (self._show_find(), "break"))
-        self._text.bind("<Control-H>",     lambda e: (self._show_find(), "break"))
-        self._text.bind("<Control-g>",     lambda e: (self._go_to_line(), "break"))
-        self._text.bind("<Control-G>",     lambda e: (self._go_to_line(), "break"))
-        self._text.bind("<Control-minus>", lambda e: (self._zoom_out(), "break"))
-        self._text.bind("<Control-equal>", lambda e: (self._zoom_in(),  "break"))
-        self._text.bind("<Control-plus>",  lambda e: (self._zoom_in(),  "break"))
-        self._text.bind("<Escape>",        self._on_escape)
+        self._text.bind("<<Modified>>",      self._on_modified)
+        self._text.bind("<KeyRelease>",      self._on_key_release)
+        self._text.bind("<ButtonRelease>",   self._update_status)
+        self._text.bind("<Control-z>",         lambda e: self._undo())
+        self._text.bind("<Control-Z>",         lambda e: self._undo())
+        self._text.bind("<Control-y>",         lambda e: self._redo())
+        self._text.bind("<Control-Y>",         lambda e: self._redo())
+        self._text.bind("<Control-a>",         lambda e: (self._select_all(), "break"))
+        self._text.bind("<Control-A>",         lambda e: (self._select_all(), "break"))
+        self._text.bind("<Control-f>",         lambda e: (self._show_find(), "break"))
+        self._text.bind("<Control-F>",         lambda e: (self._show_find(), "break"))
+        self._text.bind("<Control-h>",         lambda e: (self._show_find(), "break"))
+        self._text.bind("<Control-H>",         lambda e: (self._show_find(), "break"))
+        self._text.bind("<Control-g>",         lambda e: (self._go_to_line(), "break"))
+        self._text.bind("<Control-G>",         lambda e: (self._go_to_line(), "break"))
+        self._text.bind("<Control-minus>",     lambda e: (self._zoom_out(), "break"))
+        self._text.bind("<Control-equal>",     lambda e: (self._zoom_in(),  "break"))
+        self._text.bind("<Control-plus>",      lambda e: (self._zoom_in(),  "break"))
+        self._text.bind("<Control-Right>",     self._ctrl_right)
+        self._text.bind("<Control-Left>",      self._ctrl_left)
+        self._text.bind("<Control-d>",         lambda e: self._duplicate_line())
+        self._text.bind("<Control-D>",         lambda e: self._duplicate_line())
+        self._text.bind("<Control-Shift-k>",   lambda e: self._delete_line())
+        self._text.bind("<Control-Shift-K>",   lambda e: self._delete_line())
+        self._text.bind("<Shift-Delete>",      lambda e: self._delete_line())
+        self._text.bind("<Control-Return>",    lambda e: self._open_line_below())
+        self._text.bind("<Alt-Up>",            lambda e: self._move_line_up())
+        self._text.bind("<Alt-Down>",          lambda e: self._move_line_down())
+        self._text.bind("<Escape>",            self._on_escape)
         # Window-level bindings (when focus is on other controls)
         self.bind("<Control-f>", lambda e: self._show_find())
         self.bind("<Control-F>", lambda e: self._show_find())
@@ -348,6 +429,144 @@ class NotesWindow(ctk.CTkToplevel):
         self._text.tag_add(tk.SEL, "1.0", "end-1c")
         self._text.mark_set(tk.INSERT, "end-1c")
 
+    def _undo(self, event=None) -> str:
+        try:
+            self._text.edit_undo()
+        except tk.TclError:
+            pass
+        self._update_linenums()
+        self._update_status()
+        return "break"
+
+    def _redo(self, event=None) -> str:
+        try:
+            self._text.edit_redo()
+        except tk.TclError:
+            pass
+        self._update_linenums()
+        self._update_status()
+        return "break"
+
+    def _ctrl_right(self, event=None) -> str:
+        """Word-right: at line end crosses to start of next line (standard behavior)."""
+        insert   = self._text.index(tk.INSERT)
+        line_end = self._text.index(f"{insert} lineend")
+        if self._text.compare(insert, ">=", line_end):
+            # Already at line end — jump to start of next line
+            doc_end = self._text.index("end - 1c")
+            if self._text.compare(insert, ">=", doc_end):
+                return "break"
+            self._text.mark_set(tk.INSERT, f"{insert} + 1c")
+        else:
+            next_pos = self._text.index(f"{insert} wordend")
+            if self._text.compare(next_pos, ">", line_end):
+                next_pos = line_end
+            self._text.mark_set(tk.INSERT, next_pos)
+        self._text.see(tk.INSERT)
+        self._update_status()
+        return "break"
+
+    def _ctrl_left(self, event=None) -> str:
+        """Word-left: at line start crosses to end of previous line (standard behavior)."""
+        insert     = self._text.index(tk.INSERT)
+        line_start = self._text.index(f"{insert} linestart")
+        if self._text.compare(insert, "<=", line_start):
+            # Already at line start — jump to end of previous line
+            if self._text.compare(insert, "<=", "1.0"):
+                return "break"
+            self._text.mark_set(tk.INSERT, f"{insert} - 1c")
+        else:
+            prev_pos = self._text.index(f"{insert} - 1c wordstart")
+            if self._text.compare(prev_pos, "<", line_start):
+                prev_pos = line_start
+            self._text.mark_set(tk.INSERT, prev_pos)
+        self._text.see(tk.INSERT)
+        self._update_status()
+        return "break"
+
+    def _duplicate_line(self, event=None) -> str:
+        """Ctrl+D: duplicate the current line below."""
+        insert     = self._text.index(tk.INSERT)
+        ln, col    = insert.split(".")
+        line_start = self._text.index(f"{insert} linestart")
+        line_end   = self._text.index(f"{insert} lineend")
+        content    = self._text.get(line_start, line_end)
+        self._text.insert(line_end, "\n" + content)
+        self._text.mark_set(tk.INSERT, f"{int(ln)+1}.{col}")
+        self._text.see(tk.INSERT)
+        self._update_linenums()
+        self._update_status()
+        return "break"
+
+    def _delete_line(self, event=None) -> str:
+        """Ctrl+Shift+K: delete the current line."""
+        insert     = self._text.index(tk.INSERT)
+        line_start = self._text.index(f"{insert} linestart")
+        # Delete through the newline; fall back to just the line if last line
+        try:
+            after_newline = self._text.index(f"{insert} lineend + 1c")
+            self._text.delete(line_start, after_newline)
+        except tk.TclError:
+            self._text.delete(line_start, f"{insert} lineend")
+        self._update_linenums()
+        self._update_status()
+        return "break"
+
+    def _open_line_below(self, event=None) -> str:
+        """Ctrl+Enter: insert a new blank line below, move cursor there."""
+        insert   = self._text.index(tk.INSERT)
+        line_end = self._text.index(f"{insert} lineend")
+        self._text.mark_set(tk.INSERT, line_end)
+        self._text.insert(tk.INSERT, "\n")
+        self._text.see(tk.INSERT)
+        self._update_linenums()
+        self._update_status()
+        return "break"
+
+    def _move_line_up(self, event=None) -> str:
+        """Alt+Up: swap current line with the line above."""
+        insert = self._text.index(tk.INSERT)
+        ln, col = insert.split(".")
+        ln = int(ln)
+        if ln <= 1:
+            return "break"
+        cur_start  = self._text.index(f"{ln}.0")
+        cur_end    = self._text.index(f"{ln}.0 lineend")
+        prev_start = self._text.index(f"{ln-1}.0")
+        prev_end   = self._text.index(f"{ln-1}.0 lineend")
+        cur_text   = self._text.get(cur_start, cur_end)
+        prev_text  = self._text.get(prev_start, prev_end)
+        # Replace both lines atomically
+        self._text.delete(prev_start, cur_end)
+        self._text.insert(prev_start, cur_text + "\n" + prev_text)
+        self._text.mark_set(tk.INSERT, f"{ln-1}.{col}")
+        self._text.see(tk.INSERT)
+        self._update_linenums()
+        self._update_status()
+        return "break"
+
+    def _move_line_down(self, event=None) -> str:
+        """Alt+Down: swap current line with the line below."""
+        insert = self._text.index(tk.INSERT)
+        ln, col = insert.split(".")
+        ln     = int(ln)
+        total  = int(self._text.index("end-1c").split(".")[0])
+        if ln >= total:
+            return "break"
+        cur_start  = self._text.index(f"{ln}.0")
+        cur_end    = self._text.index(f"{ln}.0 lineend")
+        next_start = self._text.index(f"{ln+1}.0")
+        next_end   = self._text.index(f"{ln+1}.0 lineend")
+        cur_text   = self._text.get(cur_start, cur_end)
+        next_text  = self._text.get(next_start, next_end)
+        self._text.delete(cur_start, next_end)
+        self._text.insert(cur_start, next_text + "\n" + cur_text)
+        self._text.mark_set(tk.INSERT, f"{ln+1}.{col}")
+        self._text.see(tk.INSERT)
+        self._update_linenums()
+        self._update_status()
+        return "break"
+
     def _update_linenums(self) -> None:
         self._linenums.config(state="normal")
         self._linenums.delete("1.0", "end")
@@ -371,12 +590,10 @@ class NotesWindow(ctk.CTkToplevel):
 
     def _show_find(self) -> None:
         if not self._find_visible:
-            # Insert find bar BEFORE the editor frame so it appears between toolbar and editor
             self._find_bar.pack(fill="x", before=self._editor_frame)
             self._find_visible = True
         self._find_entry.focus_set()
         self._find_entry.select_range(0, "end")
-        # If text is selected, pre-fill the find entry
         try:
             sel = self._text.get(tk.SEL_FIRST, tk.SEL_LAST)
             if sel and "\n" not in sel:
@@ -408,11 +625,6 @@ class NotesWindow(ctk.CTkToplevel):
             return
         nocase = not self._case_var.get()
         start  = "1.0"
-        try:
-            re.compile(pattern)
-            use_re = False  # use tk.Text.search for correctness
-        except re.error:
-            use_re = False
         while True:
             pos = self._text.search(pattern, start, stopindex="end",
                                     nocase=nocase, regexp=False)
@@ -426,7 +638,7 @@ class NotesWindow(ctk.CTkToplevel):
         if count == 0:
             self._find_count.config(text="not found", fg="#cc5555")
         else:
-            self._find_count.config(text=f"{count} found", fg="#557799")
+            self._find_count.config(text=f"{count} found", fg=self._C["cnt_fg"])
             self._find_idx = 0
             self._jump_to_match(0)
 
@@ -446,7 +658,7 @@ class NotesWindow(ctk.CTkToplevel):
         self._text.see(pos)
         self._text.mark_set(tk.INSERT, pos)
         self._find_count.config(
-            text=f"{idx+1}/{len(self._find_results)}", fg="#557799")
+            text=f"{idx+1}/{len(self._find_results)}", fg=self._C["cnt_fg"])
 
     def _replace_one(self) -> None:
         if not self._find_results:
@@ -482,7 +694,7 @@ class NotesWindow(ctk.CTkToplevel):
     def _go_to_line(self) -> None:
         total = int(self._text.index("end-1c").split(".")[0])
         dlg = _InputDialog(self, "Go to Line",
-                           f"Line number (1–{total}):", "")
+                           f"Line number (1-{total}):", "")
         self.wait_window(dlg)
         if dlg.result and dlg.result.strip().isdigit():
             ln = max(1, min(int(dlg.result.strip()), total))
@@ -510,12 +722,15 @@ class NotesWindow(ctk.CTkToplevel):
         self._update_linenums()
 
     def _toggle_wrap(self) -> None:
+        C = self._C
         self._wrap_mode = "none" if self._wrap_mode == "word" else "word"
         self._text.configure(wrap=self._wrap_mode)
         if self._wrap_mode == "word":
-            self._wrap_btn_tk.configure(text="Wrap ✓", bg="#1e3a2a", fg="#aaddaa")
+            self._wrap_btn_tk.configure(
+                text="Wrap ✓", bg=C["wrap_on_bg"], fg=C["wrap_on_fg"])
         else:
-            self._wrap_btn_tk.configure(text="Wrap ✗", bg="#3a2020", fg="#ddaaaa")
+            self._wrap_btn_tk.configure(
+                text="Wrap ✗", bg=C["wrap_off_bg"], fg=C["wrap_off_fg"])
 
     # ── options dialog ────────────────────────────────────────────────────────
 
@@ -537,13 +752,14 @@ class NotesWindow(ctk.CTkToplevel):
     def show(self) -> None:
         self._visible = True
         self.deiconify()
-        # Force the window to the front even when another app has focus
         self.wm_attributes("-topmost", True)
         self.lift()
         self.focus_force()
-        # Remove always-on-top after it's raised so it doesn't stay above everything
-        self.after(300, lambda: self.wm_attributes("-topmost", False))
-        self.after(100, self._focus_text)
+        self._text.focus_force()            # immediate attempt
+        self.after(50,  self._focus_text)   # quick retry (handles first-ever show)
+        self.after(200, self._focus_text)   # medium retry
+        self.after(600, self._focus_text)   # slow retry (post-wake / slow system)
+        self.after(800, lambda: self.wm_attributes("-topmost", False))
 
     def hide(self) -> None:
         self._visible = False
@@ -605,8 +821,8 @@ class _OptionsDialog(ctk.CTkToplevel):
 
         preset_row = ctk.CTkFrame(self, fg_color="transparent")
         preset_row.pack(fill="x", **pad)
-        for label, geo in (("820×580", "820x580"), ("1200×800", "1200x800"),
-                           ("1400×900", "1400x900"), ("1600×1000", "1600x1000")):
+        for label, geo in (("820x580", "820x580"), ("1200x800", "1200x800"),
+                           ("1400x900", "1400x900"), ("1600x1000", "1600x1000")):
             ctk.CTkButton(
                 preset_row, text=label, width=86, height=28,
                 fg_color=("#1e2a3a", "#1e2a3a"),
@@ -642,7 +858,6 @@ class _OptionsDialog(ctk.CTkToplevel):
             pass
 
     def _ok(self) -> None:
-        # Apply font
         fname = self._font_var.get()
         try:
             fsize = max(_MIN_FONT, min(_MAX_FONT, int(self._size_var.get())))

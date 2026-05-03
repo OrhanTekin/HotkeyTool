@@ -884,20 +884,20 @@ class NotesWindow(ctk.CTkToplevel):
         self.update_idletasks()             # let the window render before focusing
         self.wm_attributes("-topmost", True)
         self.lift()
-        self.focus_force()
-        self._text.focus_force()
-        self.after(50,  self._focus_text)
-        self.after(250, self._focus_text)
+        self._focus_text()
+        self.after(80,  self._focus_text)
+        self.after(300, self._focus_text)
         if self._first_show:
-            # On first open (cold autostart) Windows may refuse focus until the
-            # process has been active longer — keep retrying for up to 2 seconds.
+            # On cold boot / post-sleep Windows denies focus to background
+            # processes for a while.  Keep retrying and stay topmost longer.
             self._first_show = False
-            self.after(600,  self._focus_text)
-            self.after(1200, self._focus_text)
-            self.after(2000, lambda: self.wm_attributes("-topmost", False))
+            self.after(700,  self._focus_text)
+            self.after(1400, self._focus_text)
+            self.after(2500, self._focus_text)
+            self.after(4000, lambda: self.wm_attributes("-topmost", False))
         else:
-            self.after(600, self._focus_text)
-            self.after(800, lambda: self.wm_attributes("-topmost", False))
+            self.after(700, self._focus_text)
+            self.after(900, lambda: self.wm_attributes("-topmost", False))
 
     def hide(self) -> None:
         self._visible = False
@@ -914,6 +914,14 @@ class NotesWindow(ctk.CTkToplevel):
             self.show()
 
     def _focus_text(self) -> None:
+        # SetForegroundWindow makes us the foreground window so keystrokes
+        # actually arrive here. focus_force() alone only sets input focus
+        # within our thread — it doesn't steal the foreground from another app.
+        try:
+            import ctypes
+            ctypes.windll.user32.SetForegroundWindow(self.winfo_id())
+        except Exception:
+            pass
         self.focus_force()
         self._text.focus_force()
 

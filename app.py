@@ -224,10 +224,14 @@ class App:
         """Called when the PC wakes from sleep.
 
         Windows drops all WH_KEYBOARD_LL hooks while suspended.
-        keyboard.remove_all_hotkeys() only clears Python callbacks — the
-        library's listener thread stays alive with a dead hook, so the next
-        add_hotkey() call never reinstalls it.  keyboard.unhook_all() fully
-        tears down the internals so the next add_hotkey() starts fresh.
+        keyboard.unhook_all() only clears Python callbacks — it does NOT
+        uninstall the Windows hook or stop the listener thread.  The old thread
+        stays blocked in GetMessage() with a dead hook handle.  Because
+        _listener.listening is still True, start_if_necessary() skips creating
+        a new thread, so add_hotkey() silently registers against the dead hook.
+
+        Fix: force _listener.listening = False so the next add_hotkey() call
+        spawns a fresh daemon thread that runs SetWindowsHookEx() from scratch.
         """
         # Cooldown: WNDPROC and the time-jump detector can both fire; ignore
         # any duplicate call within 10 seconds of the first one.
@@ -240,19 +244,31 @@ class App:
 
         was_listening = self.listener.is_running()
 
-        # Tear everything down
+        # 1. Tear down Python-level registrations
         self.snippets.stop()
         if was_listening:
-            self.listener.stop()
+            self.listener.stop()            # calls keyboard.remove_all_hotkeys()
+
+        # 2. Clear Python callbacks AND force the listener to think it is not
+        #    running, so start_if_necessary() will create a NEW thread (and
+        #    therefore a NEW SetWindowsHookEx call) on the next add_hotkey().
         try:
-            keyboard.unhook_all()   # forces the library to restart its hook thread
+            keyboard.unhook_all()
+        except Exception:
+            pass
+        try:
+            keyboard._listener.listening = False
         except Exception:
             pass
 
-        # Reinstall everything
+        # 3. Reinstall — a fresh daemon thread installs a fresh WH_KEYBOARD_LL
         if was_listening:
             self.listener.start()
         self.snippets.start()
+
+        # 4. Reset notes-window focus state so the next open gets full retries
+        if self.notes_win:
+            self.notes_win._first_show = True
 
         if self.window:
             self.window.update_status("Reconnected after sleep")

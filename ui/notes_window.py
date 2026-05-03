@@ -126,6 +126,7 @@ class NotesWindow(ctk.CTkToplevel):
         self._notes:  List[NoteFile] = []
         self._active: Optional[NoteFile] = None
         self._visible         = False
+        self._first_show      = True
         self._font_size       = 13
         self._font_name       = "Consolas"
         self._wrap_mode       = "word"
@@ -326,8 +327,10 @@ class NotesWindow(ctk.CTkToplevel):
         self._text.bind("<Control-minus>",     lambda e: (self._zoom_out(), "break"))
         self._text.bind("<Control-equal>",     lambda e: (self._zoom_in(),  "break"))
         self._text.bind("<Control-plus>",      lambda e: (self._zoom_in(),  "break"))
-        self._text.bind("<Control-Right>",     self._ctrl_right)
-        self._text.bind("<Control-Left>",      self._ctrl_left)
+        self._text.bind("<Control-Right>",       self._ctrl_right)
+        self._text.bind("<Control-Left>",        self._ctrl_left)
+        self._text.bind("<Control-Shift-Right>", self._ctrl_shift_right)
+        self._text.bind("<Control-Shift-Left>",  self._ctrl_shift_left)
         self._text.bind("<Control-d>",         lambda e: self._duplicate_line())
         self._text.bind("<Control-D>",         lambda e: self._duplicate_line())
         self._text.bind("<Control-Shift-k>",   lambda e: self._delete_line())
@@ -447,42 +450,111 @@ class NotesWindow(ctk.CTkToplevel):
         self._update_status()
         return "break"
 
-    def _ctrl_right(self, event=None) -> str:
-        """Word-right: at line end crosses to start of next line (standard behavior)."""
-        insert   = self._text.index(tk.INSERT)
+    # ── word navigation helpers ───────────────────────────────────────────────
+
+    def _next_word_pos(self, insert: str) -> str | None:
+        """Return position of next word start, or None if at document end."""
         line_end = self._text.index(f"{insert} lineend")
         if self._text.compare(insert, ">=", line_end):
-            # Already at line end — jump to start of next line
             doc_end = self._text.index("end - 1c")
             if self._text.compare(insert, ">=", doc_end):
-                return "break"
-            self._text.mark_set(tk.INSERT, f"{insert} + 1c")
-        else:
-            next_pos = self._text.index(f"{insert} wordend")
-            if self._text.compare(next_pos, ">", line_end):
-                next_pos = line_end
-            self._text.mark_set(tk.INSERT, next_pos)
+                return None
+            return self._text.index(f"{insert} + 1c")  # cross to next line
+        pos = insert
+        # Skip current non-whitespace token
+        while self._text.compare(pos, "<", line_end) and not self._text.get(pos).isspace():
+            pos = self._text.index(f"{pos} + 1c")
+        # Skip whitespace to land at start of next word
+        while self._text.compare(pos, "<", line_end) and self._text.get(pos).isspace():
+            pos = self._text.index(f"{pos} + 1c")
+        return pos
+
+    def _prev_word_pos(self, insert: str) -> str | None:
+        """Return position of previous word start, or None if at document start."""
+        line_start = self._text.index(f"{insert} linestart")
+        if self._text.compare(insert, "<=", line_start):
+            if self._text.compare(insert, "<=", "1.0"):
+                return None
+            return self._text.index(f"{insert} - 1c")  # cross to previous line end
+        pos = insert
+        # Skip whitespace backwards
+        while (self._text.compare(pos, ">", line_start) and
+               self._text.get(self._text.index(f"{pos} - 1c")).isspace()):
+            pos = self._text.index(f"{pos} - 1c")
+        # Skip non-whitespace backwards to reach start of word
+        while (self._text.compare(pos, ">", line_start) and
+               not self._text.get(self._text.index(f"{pos} - 1c")).isspace()):
+            pos = self._text.index(f"{pos} - 1c")
+        return pos
+
+    def _ctrl_right(self, event=None) -> str:
+        """Move to start of next word (Windows-style: skip token + whitespace)."""
+        new_pos = self._next_word_pos(self._text.index(tk.INSERT))
+        if new_pos is None:
+            return "break"
+        self._text.tag_remove(tk.SEL, "1.0", "end")
+        self._text.mark_set(tk.INSERT, new_pos)
         self._text.see(tk.INSERT)
         self._update_status()
         return "break"
 
     def _ctrl_left(self, event=None) -> str:
-        """Word-left: at line start crosses to end of previous line (standard behavior)."""
-        insert     = self._text.index(tk.INSERT)
-        line_start = self._text.index(f"{insert} linestart")
-        if self._text.compare(insert, "<=", line_start):
-            # Already at line start — jump to end of previous line
-            if self._text.compare(insert, "<=", "1.0"):
-                return "break"
-            self._text.mark_set(tk.INSERT, f"{insert} - 1c")
-        else:
-            prev_pos = self._text.index(f"{insert} - 1c wordstart")
-            if self._text.compare(prev_pos, "<", line_start):
-                prev_pos = line_start
-            self._text.mark_set(tk.INSERT, prev_pos)
+        """Move to start of previous word (Windows-style: skip whitespace + token back)."""
+        new_pos = self._prev_word_pos(self._text.index(tk.INSERT))
+        if new_pos is None:
+            return "break"
+        self._text.tag_remove(tk.SEL, "1.0", "end")
+        self._text.mark_set(tk.INSERT, new_pos)
         self._text.see(tk.INSERT)
         self._update_status()
         return "break"
+
+    def _ctrl_shift_right(self, event=None) -> str:
+        """Extend selection to start of next word."""
+        insert  = self._text.index(tk.INSERT)
+        new_pos = self._next_word_pos(insert)
+        if new_pos is None:
+            return "break"
+        anchor = self._sel_anchor_for_extend(insert, moving_right=True)
+        self._text.mark_set(tk.INSERT, new_pos)
+        self._apply_selection(anchor, new_pos)
+        self._text.see(tk.INSERT)
+        self._update_status()
+        return "break"
+
+    def _ctrl_shift_left(self, event=None) -> str:
+        """Extend selection to start of previous word."""
+        insert  = self._text.index(tk.INSERT)
+        new_pos = self._prev_word_pos(insert)
+        if new_pos is None:
+            return "break"
+        anchor = self._sel_anchor_for_extend(insert, moving_right=False)
+        self._text.mark_set(tk.INSERT, new_pos)
+        self._apply_selection(anchor, new_pos)
+        self._text.see(tk.INSERT)
+        self._update_status()
+        return "break"
+
+    def _sel_anchor_for_extend(self, insert: str, moving_right: bool) -> str:
+        """Return the fixed end of the current selection (the anchor)."""
+        try:
+            first = self._text.index(tk.SEL_FIRST)
+            last  = self._text.index(tk.SEL_LAST)
+            # If cursor is at the moving end, anchor is the other end
+            if self._text.compare(insert, "==", last):
+                return first
+            if self._text.compare(insert, "==", first):
+                return last
+        except tk.TclError:
+            pass
+        return insert  # no selection — anchor at current cursor
+
+    def _apply_selection(self, anchor: str, cursor: str) -> None:
+        self._text.tag_remove(tk.SEL, "1.0", "end")
+        if self._text.compare(anchor, "<", cursor):
+            self._text.tag_add(tk.SEL, anchor, cursor)
+        elif self._text.compare(anchor, ">", cursor):
+            self._text.tag_add(tk.SEL, cursor, anchor)
 
     def _duplicate_line(self, event=None) -> str:
         """Ctrl+D: duplicate the current line below."""
@@ -752,14 +824,23 @@ class NotesWindow(ctk.CTkToplevel):
     def show(self) -> None:
         self._visible = True
         self.deiconify()
+        self.update_idletasks()             # let the window render before focusing
         self.wm_attributes("-topmost", True)
         self.lift()
         self.focus_force()
-        self._text.focus_force()            # immediate attempt
-        self.after(50,  self._focus_text)   # quick retry (handles first-ever show)
-        self.after(200, self._focus_text)   # medium retry
-        self.after(600, self._focus_text)   # slow retry (post-wake / slow system)
-        self.after(800, lambda: self.wm_attributes("-topmost", False))
+        self._text.focus_force()
+        self.after(50,  self._focus_text)
+        self.after(250, self._focus_text)
+        if self._first_show:
+            # On first open (cold autostart) Windows may refuse focus until the
+            # process has been active longer — keep retrying for up to 2 seconds.
+            self._first_show = False
+            self.after(600,  self._focus_text)
+            self.after(1200, self._focus_text)
+            self.after(2000, lambda: self.wm_attributes("-topmost", False))
+        else:
+            self.after(600, self._focus_text)
+            self.after(800, lambda: self.wm_attributes("-topmost", False))
 
     def hide(self) -> None:
         self._visible = False

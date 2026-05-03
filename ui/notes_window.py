@@ -128,6 +128,8 @@ class NotesWindow(ctk.CTkToplevel):
         self._visible         = False
         self._first_show      = True
         self._font_size       = 13
+        self._blink_timer: str | None = None
+        self._sel_anchor: str | None  = None
         self._font_name       = "Consolas"
         self._wrap_mode       = "word"
         self._find_visible    = False
@@ -293,6 +295,7 @@ class NotesWindow(ctk.CTkToplevel):
             wrap=self._wrap_mode,
             undo=True, maxundo=-1,
             tabs=("1c",),
+            insertontime=600, insertofftime=0,   # solid cursor; blink only when idle
         )
         self._text.tag_configure(_MATCH_TAG,
                                  background=C["match_bg"], foreground=C["match_fg"])
@@ -311,7 +314,7 @@ class NotesWindow(ctk.CTkToplevel):
         # ── Key / event bindings ──
         self._text.bind("<<Modified>>",      self._on_modified)
         self._text.bind("<KeyRelease>",      self._on_key_release)
-        self._text.bind("<ButtonRelease>",   self._update_status)
+        self._text.bind("<ButtonRelease>",   self._on_mouse_release)
         self._text.bind("<Control-z>",         lambda e: self._undo())
         self._text.bind("<Control-Z>",         lambda e: self._undo())
         self._text.bind("<Control-y>",         lambda e: self._redo())
@@ -329,8 +332,12 @@ class NotesWindow(ctk.CTkToplevel):
         self._text.bind("<Control-plus>",      lambda e: (self._zoom_in(),  "break"))
         self._text.bind("<Control-Right>",       self._ctrl_right)
         self._text.bind("<Control-Left>",        self._ctrl_left)
+        self._text.bind("<Control-Up>",          self._ctrl_up)
+        self._text.bind("<Control-Down>",        self._ctrl_down)
         self._text.bind("<Control-Shift-Right>", self._ctrl_shift_right)
         self._text.bind("<Control-Shift-Left>",  self._ctrl_shift_left)
+        self._text.bind("<Control-Shift-Up>",    self._ctrl_shift_up)
+        self._text.bind("<Control-Shift-Down>",  self._ctrl_shift_down)
         self._text.bind("<Control-d>",         lambda e: self._duplicate_line())
         self._text.bind("<Control-D>",         lambda e: self._duplicate_line())
         self._text.bind("<Control-Shift-k>",   lambda e: self._delete_line())
@@ -418,11 +425,28 @@ class NotesWindow(ctk.CTkToplevel):
             self._saved_lbl.config(text="")
             self._text.edit_modified(False)
 
+    def _on_activity(self) -> None:
+        """Keep cursor solid while the user is active; resume blinking after 1 s of idle."""
+        if self._blink_timer:
+            self.after_cancel(self._blink_timer)
+        self._text.configure(insertofftime=0)
+        self._blink_timer = self.after(1000, self._resume_blink)
+
+    def _resume_blink(self) -> None:
+        self._blink_timer = None
+        self._text.configure(insertofftime=300)
+
     def _on_key_release(self, _event=None) -> None:
+        self._on_activity()
         self._update_linenums()
         self._update_status()
         if self._find_visible and self._find_var.get():
             self._do_highlight()
+
+    def _on_mouse_release(self, _event=None) -> None:
+        self._sel_anchor = None
+        self._on_activity()
+        self._update_status()
 
     def _on_escape(self, _event=None) -> None:
         if self._find_visible:
@@ -453,42 +477,44 @@ class NotesWindow(ctk.CTkToplevel):
     # ── word navigation helpers ───────────────────────────────────────────────
 
     def _next_word_pos(self, insert: str) -> str | None:
-        """Return position of next word start, or None if at document end."""
-        line_end = self._text.index(f"{insert} lineend")
-        if self._text.compare(insert, ">=", line_end):
-            doc_end = self._text.index("end - 1c")
-            if self._text.compare(insert, ">=", doc_end):
+        """Return position of next word start (Windows-style), or None at document end."""
+        ln, col = insert.split(".")
+        ln, col = int(ln), int(col)
+        line = self._text.get(f"{ln}.0", f"{ln}.end")
+        n = len(line)
+        if col >= n:
+            total = int(self._text.index("end-1c").split(".")[0])
+            if ln >= total:
                 return None
-            return self._text.index(f"{insert} + 1c")  # cross to next line
-        pos = insert
-        # Skip current non-whitespace token
-        while self._text.compare(pos, "<", line_end) and not self._text.get(pos).isspace():
-            pos = self._text.index(f"{pos} + 1c")
-        # Skip whitespace to land at start of next word
-        while self._text.compare(pos, "<", line_end) and self._text.get(pos).isspace():
-            pos = self._text.index(f"{pos} + 1c")
-        return pos
+            return f"{ln+1}.0"
+        pos = col
+        while pos < n and not line[pos].isspace():
+            pos += 1
+        while pos < n and line[pos].isspace():
+            pos += 1
+        return f"{ln}.{pos}"
 
     def _prev_word_pos(self, insert: str) -> str | None:
-        """Return position of previous word start, or None if at document start."""
-        line_start = self._text.index(f"{insert} linestart")
-        if self._text.compare(insert, "<=", line_start):
-            if self._text.compare(insert, "<=", "1.0"):
+        """Return position of previous word start (Windows-style), or None at document start."""
+        ln, col = insert.split(".")
+        ln, col = int(ln), int(col)
+        if col == 0:
+            if ln <= 1:
                 return None
-            return self._text.index(f"{insert} - 1c")  # cross to previous line end
-        pos = insert
-        # Skip whitespace backwards
-        while (self._text.compare(pos, ">", line_start) and
-               self._text.get(self._text.index(f"{pos} - 1c")).isspace()):
-            pos = self._text.index(f"{pos} - 1c")
-        # Skip non-whitespace backwards to reach start of word
-        while (self._text.compare(pos, ">", line_start) and
-               not self._text.get(self._text.index(f"{pos} - 1c")).isspace()):
-            pos = self._text.index(f"{pos} - 1c")
-        return pos
+            prev = ln - 1
+            prev_line = self._text.get(f"{prev}.0", f"{prev}.end")
+            return f"{prev}.{len(prev_line)}"
+        line = self._text.get(f"{ln}.0", f"{ln}.end")
+        pos = col
+        while pos > 0 and line[pos-1].isspace():
+            pos -= 1
+        while pos > 0 and not line[pos-1].isspace():
+            pos -= 1
+        return f"{ln}.{pos}"
 
     def _ctrl_right(self, event=None) -> str:
-        """Move to start of next word (Windows-style: skip token + whitespace)."""
+        """Move to start of next word; clear selection and stored anchor."""
+        self._sel_anchor = None
         new_pos = self._next_word_pos(self._text.index(tk.INSERT))
         if new_pos is None:
             return "break"
@@ -499,7 +525,8 @@ class NotesWindow(ctk.CTkToplevel):
         return "break"
 
     def _ctrl_left(self, event=None) -> str:
-        """Move to start of previous word (Windows-style: skip whitespace + token back)."""
+        """Move to start of previous word; clear selection and stored anchor."""
+        self._sel_anchor = None
         new_pos = self._prev_word_pos(self._text.index(tk.INSERT))
         if new_pos is None:
             return "break"
@@ -511,43 +538,73 @@ class NotesWindow(ctk.CTkToplevel):
 
     def _ctrl_shift_right(self, event=None) -> str:
         """Extend selection to start of next word."""
-        insert  = self._text.index(tk.INSERT)
+        insert = self._text.index(tk.INSERT)
+        if self._sel_anchor is None:
+            self._sel_anchor = insert
         new_pos = self._next_word_pos(insert)
         if new_pos is None:
             return "break"
-        anchor = self._sel_anchor_for_extend(insert, moving_right=True)
         self._text.mark_set(tk.INSERT, new_pos)
-        self._apply_selection(anchor, new_pos)
+        self._apply_selection(self._sel_anchor, new_pos)
         self._text.see(tk.INSERT)
         self._update_status()
         return "break"
 
     def _ctrl_shift_left(self, event=None) -> str:
         """Extend selection to start of previous word."""
-        insert  = self._text.index(tk.INSERT)
+        insert = self._text.index(tk.INSERT)
+        if self._sel_anchor is None:
+            self._sel_anchor = insert
         new_pos = self._prev_word_pos(insert)
         if new_pos is None:
             return "break"
-        anchor = self._sel_anchor_for_extend(insert, moving_right=False)
         self._text.mark_set(tk.INSERT, new_pos)
-        self._apply_selection(anchor, new_pos)
+        self._apply_selection(self._sel_anchor, new_pos)
         self._text.see(tk.INSERT)
         self._update_status()
         return "break"
 
-    def _sel_anchor_for_extend(self, insert: str, moving_right: bool) -> str:
-        """Return the fixed end of the current selection (the anchor)."""
-        try:
-            first = self._text.index(tk.SEL_FIRST)
-            last  = self._text.index(tk.SEL_LAST)
-            # If cursor is at the moving end, anchor is the other end
-            if self._text.compare(insert, "==", last):
-                return first
-            if self._text.compare(insert, "==", first):
-                return last
-        except tk.TclError:
-            pass
-        return insert  # no selection — anchor at current cursor
+    def _ctrl_up(self, event=None) -> str:
+        """Ctrl+Up: move cursor up one line, clear selection and anchor."""
+        self._sel_anchor = None
+        self._text.tag_remove(tk.SEL, "1.0", "end")
+        self._text.mark_set(tk.INSERT, "insert - 1 lines")
+        self._text.see(tk.INSERT)
+        self._update_status()
+        return "break"
+
+    def _ctrl_down(self, event=None) -> str:
+        """Ctrl+Down: move cursor down one line, clear selection and anchor."""
+        self._sel_anchor = None
+        self._text.tag_remove(tk.SEL, "1.0", "end")
+        self._text.mark_set(tk.INSERT, "insert + 1 lines")
+        self._text.see(tk.INSERT)
+        self._update_status()
+        return "break"
+
+    def _ctrl_shift_up(self, event=None) -> str:
+        """Extend selection up one line."""
+        insert = self._text.index(tk.INSERT)
+        if self._sel_anchor is None:
+            self._sel_anchor = insert
+        new_pos = self._text.index("insert - 1 lines")
+        self._text.mark_set(tk.INSERT, new_pos)
+        self._apply_selection(self._sel_anchor, new_pos)
+        self._text.see(tk.INSERT)
+        self._update_status()
+        return "break"
+
+    def _ctrl_shift_down(self, event=None) -> str:
+        """Extend selection down one line."""
+        insert = self._text.index(tk.INSERT)
+        if self._sel_anchor is None:
+            self._sel_anchor = insert
+        new_pos = self._text.index("insert + 1 lines")
+        self._text.mark_set(tk.INSERT, new_pos)
+        self._apply_selection(self._sel_anchor, new_pos)
+        self._text.see(tk.INSERT)
+        self._update_status()
+        return "break"
 
     def _apply_selection(self, anchor: str, cursor: str) -> None:
         self._text.tag_remove(tk.SEL, "1.0", "end")

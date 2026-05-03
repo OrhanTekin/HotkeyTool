@@ -24,6 +24,7 @@ _TYPES = [
     ("Replay Macro",         "replay_macro"),
     ("Toggle Stats Widget",  "toggle_stats_widget"),
     ("Show Notes",           "show_notes_window"),
+    ("Show Window",          "show_window"),
     ("Wait (ms)",            "wait"),
     ("Color Picker",         "color_picker"),
     ("Transform Text",       "text_transform"),
@@ -318,6 +319,14 @@ class ActionEditor(ctk.CTkFrame):
                 text_color=("#888899", "#888899"),
             ).pack(side="left", padx=4)
 
+        elif atype == "show_window":
+            ctk.CTkLabel(
+                self.value_frame,
+                text="Brings the HotkeyTool main window to the front (from tray).",
+                font=ctk.CTkFont(size=11),
+                text_color=("#888899", "#888899"),
+            ).pack(side="left", padx=4)
+
         elif atype == "wait":
             ctk.CTkLabel(
                 self.value_frame, text="Duration (ms):", width=100,
@@ -448,7 +457,7 @@ class ActionEditor(ctk.CTkFrame):
             lbl   = self._system_var.get() if self._system_var else _SYSTEM_OPTS[0][0]
             value = _SYS_LABEL_TO_KEY.get(lbl, "lock")
         elif atype in ("toggle_topmost", "toggle_stats_widget", "show_notes_window",
-                       "color_picker", "text_transform", "gemini_ask"):
+                       "show_window", "color_picker", "text_transform", "gemini_ask"):
             value = ""
         else:
             value = self.value_var.get().strip()

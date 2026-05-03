@@ -80,7 +80,7 @@ def _dispatch(action: Action, trigger_hwnd: int = 0) -> None:
     if action.type == "replay_macro":
         _replay_macro(action)
         return
-    if action.type in ("toggle_stats_widget", "show_notes_window"):
+    if action.type in ("toggle_stats_widget", "show_notes_window", "show_window"):
         fn = _app_callbacks.get(action.type)
         if fn:
             fn()

@@ -51,6 +51,7 @@ class App:
         # Register callbacks so action_runner can reach UI-level services
         register_app_callback("toggle_stats_widget",   self._cb_toggle_stats)
         register_app_callback("show_notes_window",     self._cb_show_notes)
+        register_app_callback("show_window",           self.show_window)
         register_app_callback("show_transform_picker", self._cb_show_transform_picker)
         register_app_callback("get_gemini_key",        lambda: self.config.settings.gemini_api_key)
         register_app_callback("gemini_ask",            self._cb_gemini_ask)

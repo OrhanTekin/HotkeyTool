@@ -249,7 +249,6 @@ class _BindingRow(ctk.CTkFrame):
             "run_command":    "Cmd",
             "send_keys":      "Keys",
             "media_control":  "Media",
-            "system_action":  "Sys",
             "toggle_topmost": "Top",
             "replay_macro":   "Macro",
         }

@@ -193,7 +193,9 @@ class MainWindow(ctk.CTk):
                 if msg == _WM_POWERBROADCAST and wparam in (
                     _PBT_RESUMESUSPEND, _PBT_RESUMEAUTOMATIC
                 ):
-                    self.after(2000, app.on_system_resume)
+                    # on_system_resume itself schedules the actual restart 3 s
+                    # later, so we just route the wake signal there immediately.
+                    self.after(0, app.on_system_resume)
                 return _u32.CallWindowProcW(
                     self._old_wndproc, hwnd, msg, wparam, lparam
                 )

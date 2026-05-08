@@ -221,52 +221,75 @@ class App:
     # ── sleep / wake recovery ─────────────────────────────────────────────────
 
     def on_system_resume(self) -> None:
-        """Called when the PC wakes from sleep.
+        """Schedule multiple keyboard-listener restart attempts after wake.
 
-        Windows drops all WH_KEYBOARD_LL hooks while suspended.
-        keyboard.unhook_all() only clears Python callbacks — it does NOT
-        uninstall the Windows hook or stop the listener thread.  The old thread
-        stays blocked in GetMessage() with a dead hook handle.  Because
-        _listener.listening is still True, start_if_necessary() skips creating
-        a new thread, so add_hotkey() silently registers against the dead hook.
+        Modifying the existing keyboard library listener (setting listening=False
+        + start_if_necessary) was unreliable — observed in the field that hotkeys
+        stayed dead minutes after wake.  The robust fix is to REPLACE
+        keyboard._listener with a brand-new instance, which guarantees:
+          • all internal containers start fresh
+          • a new listening thread is spawned
+          • that thread calls prepare_intercept() → SetWindowsHookEx() with a
+            new handle (the OS-level hook is re-installed)
 
-        Fix: force _listener.listening = False so the next add_hotkey() call
-        spawns a fresh daemon thread that runs SetWindowsHookEx() from scratch.
+        Multiple staggered attempts (3 s, 7 s, 15 s, 30 s) cover the case where
+        Windows' input subsystem isn't fully ready immediately after wake.
         """
-        # Cooldown: WNDPROC and the time-jump detector can both fire; ignore
-        # any duplicate call within 10 seconds of the first one.
         now = time.monotonic()
-        if now - getattr(self, "_last_resume_t", 0.0) < 10:
+        if now - getattr(self, "_last_resume_t", 0.0) < 5:
             return
         self._last_resume_t = now
 
+        if self.window:
+            for delay in (3000, 7000, 15000, 30000):
+                self.window.after(delay, self._do_resume_restart)
+
+    def _do_resume_restart(self) -> None:
+        """Replace keyboard._listener with a fresh instance and re-register.
+
+        Each call is a complete reset — safe to invoke multiple times.  The
+        OLD listener instance is orphaned (its threads stay alive but no longer
+        match any callbacks since we replace the global reference) and gets
+        GC'd whenever Python decides to.
+        """
         import keyboard
 
         was_listening = self.listener.is_running()
 
-        # 1. Tear down Python-level registrations
-        self.snippets.stop()
-        if was_listening:
-            self.listener.stop()            # calls keyboard.remove_all_hotkeys()
-
-        # 2. Clear Python callbacks AND force the listener to think it is not
-        #    running, so start_if_necessary() will create a NEW thread (and
-        #    therefore a NEW SetWindowsHookEx call) on the next add_hotkey().
+        # 1. Stop our wrappers (so they don't double-register against the new listener)
         try:
-            keyboard.unhook_all()
+            self.snippets.stop()
         except Exception:
             pass
         try:
-            keyboard._listener.listening = False
+            if was_listening:
+                self.listener.stop()
         except Exception:
             pass
 
-        # 3. Reinstall — a fresh daemon thread installs a fresh WH_KEYBOARD_LL
-        if was_listening:
-            self.listener.start()
-        self.snippets.start()
+        # 2. Replace keyboard._listener entirely with a fresh instance.
+        #    add_hotkey/hook in the keyboard module read _listener via the
+        #    module's namespace at call time, so they pick up the replacement.
+        try:
+            old = keyboard._listener
+            new_listener = type(old)()
+            keyboard._listener = new_listener
+            new_listener.start_if_necessary()   # new thread + fresh SetWindowsHookEx
+        except Exception as exc:
+            print(f"[HotkeyTool] resume: listener replace error: {exc}")
 
-        # 4. Reset notes-window focus state so the next open gets full retries
+        # 3. Re-register everything against the fresh listener
+        try:
+            if was_listening:
+                self.listener.start()
+        except Exception as exc:
+            print(f"[HotkeyTool] resume: listener.start error: {exc}")
+        try:
+            self.snippets.start()
+        except Exception as exc:
+            print(f"[HotkeyTool] resume: snippets.start error: {exc}")
+
+        # 4. Reset notes window so the next open gets full focus retries
         if self.notes_win:
             self.notes_win._first_show = True
 
@@ -281,7 +304,7 @@ class App:
         A startup grace period prevents false positives during slow boot.
         """
         POLL_S       = 2    # check interval
-        GRACE_S      = 8    # extra seconds before assuming suspend (threshold = POLL_S + GRACE_S)
+        GRACE_S      = 4    # extra seconds before assuming suspend (threshold = POLL_S + GRACE_S = 6 s)
         STARTUP_WAIT = 30   # skip checks for this long after launch to avoid boot false-positives
 
         def _monitor() -> None:
@@ -291,7 +314,7 @@ class App:
                 time.sleep(POLL_S)
                 if time.monotonic() - t0 > POLL_S + GRACE_S:
                     if self.window:
-                        self.window.after(1000, self.on_system_resume)
+                        self.window.after(0, self.on_system_resume)
 
         threading.Thread(target=_monitor, daemon=True).start()
 

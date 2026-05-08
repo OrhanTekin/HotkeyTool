@@ -19,7 +19,6 @@ _TYPES = [
     ("Run Command",          "run_command"),
     ("Sende Taste(n)",       "send_keys"),
     ("Media Control",        "media_control"),
-    ("System Action",        "system_action"),
     ("Toggle Always On Top", "toggle_topmost"),
     ("Replay Macro",         "replay_macro"),
     ("Toggle Stats Widget",  "toggle_stats_widget"),
@@ -85,17 +84,6 @@ _MEDIA_OPTS = [
 _MEDIA_LABEL_TO_KEY = {lbl: k for lbl, k in _MEDIA_OPTS}
 _MEDIA_KEY_TO_LABEL = {k: lbl for lbl, k in _MEDIA_OPTS}
 
-_SYSTEM_OPTS = [
-    ("Lock Screen", "lock"),
-    ("Sleep",       "sleep"),
-    ("Shutdown",    "shutdown"),
-    ("Restart",     "restart"),
-    ("Hibernate",   "hibernate"),
-]
-_SYS_LABEL_TO_KEY = {lbl: k for lbl, k in _SYSTEM_OPTS}
-_SYS_KEY_TO_LABEL = {k: lbl for lbl, k in _SYSTEM_OPTS}
-
-
 # ── widget ───────────────────────────────────────────────────────────────────
 
 class ActionEditor(ctk.CTkFrame):
@@ -121,7 +109,6 @@ class ActionEditor(ctk.CTkFrame):
 
         # sub-vars for option-menu action types (created in _build_value_row)
         self._media_var:       ctk.StringVar | None = None
-        self._system_var:      ctk.StringVar | None = None
         self._keys_picker_var: ctk.StringVar | None = None
 
         self._build()
@@ -199,7 +186,6 @@ class ActionEditor(ctk.CTkFrame):
         for w in self.value_frame.winfo_children():
             w.destroy()
         self._media_var       = None
-        self._system_var      = None
         self._keys_picker_var = None
 
         atype = _LABEL_TO_KEY.get(self.type_var.get(), "open_url")
@@ -278,20 +264,6 @@ class ActionEditor(ctk.CTkFrame):
                 self.value_frame,
                 variable=self._media_var,
                 values=[lbl for lbl, _ in _MEDIA_OPTS],
-                width=170, height=28,
-            ).pack(side="left", padx=4)
-
-        elif atype == "system_action":
-            cur_lbl = _SYS_KEY_TO_LABEL.get(self.value_var.get(), _SYSTEM_OPTS[0][0])
-            self._system_var = ctk.StringVar(value=cur_lbl)
-            ctk.CTkLabel(
-                self.value_frame, text="Action:", width=52,
-                font=ctk.CTkFont(size=11),
-            ).pack(side="left")
-            ctk.CTkOptionMenu(
-                self.value_frame,
-                variable=self._system_var,
-                values=[lbl for lbl, _ in _SYSTEM_OPTS],
                 width=170, height=28,
             ).pack(side="left", padx=4)
 
@@ -453,9 +425,6 @@ class ActionEditor(ctk.CTkFrame):
         if atype == "media_control":
             lbl   = self._media_var.get() if self._media_var else _MEDIA_OPTS[0][0]
             value = _MEDIA_LABEL_TO_KEY.get(lbl, "play_pause")
-        elif atype == "system_action":
-            lbl   = self._system_var.get() if self._system_var else _SYSTEM_OPTS[0][0]
-            value = _SYS_LABEL_TO_KEY.get(lbl, "lock")
         elif atype in ("toggle_topmost", "toggle_stats_widget", "show_notes_window",
                        "show_window", "color_picker", "text_transform", "gemini_ask"):
             value = ""

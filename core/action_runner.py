@@ -112,7 +112,6 @@ def _dispatch(action: Action, trigger_hwnd: int = 0) -> None:
         "type_text":     _type_text,
         "run_command":   _run_command,
         "media_control": _media_control,
-        "system_action": _system_action,
         "send_keys":     _send_keys,
         "wait":          _wait,
         "color_picker":  _color_picker,
@@ -302,27 +301,3 @@ def _gemini_clipboard(action: Action) -> None:
         _write_clipboard_text(f"[Gemini Error] {exc}")
 
 
-def _system_action(action: Action) -> None:
-    val = action.value
-    if val == "lock":
-        ctypes.windll.user32.LockWorkStation()
-    elif val == "sleep":
-        subprocess.Popen(
-            "rundll32 powrprof.dll,SetSuspendState 0,1,0",
-            shell=True, creationflags=subprocess.CREATE_NO_WINDOW,
-        )
-    elif val == "shutdown":
-        subprocess.Popen(
-            "shutdown /s /t 5",
-            shell=True, creationflags=subprocess.CREATE_NO_WINDOW,
-        )
-    elif val == "restart":
-        subprocess.Popen(
-            "shutdown /r /t 5",
-            shell=True, creationflags=subprocess.CREATE_NO_WINDOW,
-        )
-    elif val == "hibernate":
-        subprocess.Popen(
-            "shutdown /h",
-            shell=True, creationflags=subprocess.CREATE_NO_WINDOW,
-        )

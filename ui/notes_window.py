@@ -914,16 +914,51 @@ class NotesWindow(ctk.CTkToplevel):
             self.show()
 
     def _focus_text(self) -> None:
-        # SetForegroundWindow makes us the foreground window so keystrokes
-        # actually arrive here. focus_force() alone only sets input focus
-        # within our thread — it doesn't steal the foreground from another app.
+        # SetForegroundWindow alone is denied to background processes (this is
+        # what makes the Notes window stay un-focused after cold boot or
+        # post-sleep).  The reliable bypass is AttachThreadInput — temporarily
+        # merging our input queue with the current foreground thread's lets
+        # SetForegroundWindow succeed.  Then SetFocus on the text widget's
+        # native HWND drops the keyboard caret directly inside the editor.
         try:
             import ctypes
-            ctypes.windll.user32.SetForegroundWindow(self.winfo_id())
+            from ctypes import wintypes
+            user32   = ctypes.windll.user32
+            kernel32 = ctypes.windll.kernel32
+
+            user32.GetWindowThreadProcessId.restype  = wintypes.DWORD
+            user32.GetWindowThreadProcessId.argtypes = [wintypes.HWND,
+                                                        ctypes.POINTER(wintypes.DWORD)]
+            user32.AttachThreadInput.argtypes = [wintypes.DWORD, wintypes.DWORD,
+                                                 wintypes.BOOL]
+
+            target_hwnd = self.winfo_id()
+            text_hwnd   = self._text.winfo_id()
+            fg_hwnd     = user32.GetForegroundWindow()
+            cur_tid     = kernel32.GetCurrentThreadId()
+
+            attached = False
+            fg_tid   = 0
+            if fg_hwnd and fg_hwnd != target_hwnd:
+                fg_tid = user32.GetWindowThreadProcessId(fg_hwnd, None)
+                if fg_tid and fg_tid != cur_tid:
+                    if user32.AttachThreadInput(cur_tid, fg_tid, True):
+                        attached = True
+            try:
+                user32.BringWindowToTop(target_hwnd)
+                user32.SetForegroundWindow(target_hwnd)
+                user32.SetFocus(text_hwnd)
+            finally:
+                if attached:
+                    user32.AttachThreadInput(cur_tid, fg_tid, False)
         except Exception:
             pass
-        self.focus_force()
-        self._text.focus_force()
+        # Tkinter-side focus assertion (sets the widget's internal focus mark)
+        try:
+            self.focus_force()
+            self._text.focus_force()
+        except Exception:
+            pass
 
 
 # ── Options dialog ────────────────────────────────────────────────────────────

@@ -278,33 +278,26 @@ class MainWindow(ctk.CTk):
         self.after(1000, self._tick_clock)
 
     # ── window icon ──────────────────────────────────────────────────────────
-
     def _apply_window_icon(self) -> None:
         from utils.resource_path import resource_path
         try:
             ico_path = resource_path("assets/hotkeytool.ico")
-            if not ico_path.exists():
-                return
-            path_str = str(ico_path)
-            user32 = ctypes.windll.user32
-            hwnd = self.winfo_id()
-            try:
-                dpi = user32.GetDpiForWindow(hwnd)
-            except Exception:
-                dpi = 96
-            big_px   = int(32 * dpi / 96)
-            small_px = int(16 * dpi / 96)
-            LR_LOADFROMFILE = 0x0010
-            IMAGE_ICON      = 1
-            WM_SETICON      = 0x0080
-            hbig = user32.LoadImageW(
-                None, path_str, IMAGE_ICON, big_px, big_px, LR_LOADFROMFILE)
-            hsmall = user32.LoadImageW(
-                None, path_str, IMAGE_ICON, small_px, small_px, LR_LOADFROMFILE)
-            user32.SendMessageW(hwnd, WM_SETICON, 1, hbig)
-            user32.SendMessageW(hwnd, WM_SETICON, 0, hsmall)
-        except Exception:
-            pass
+            
+            # Check if the file actually exists first
+            if ico_path.exists():
+                # 1. Standard Tkinter method (Handles Title Bar)
+                self.iconbitmap(str(ico_path))
+                
+                # 2. Set the 'Taskbar' icon specifically for Windows
+                # This prevents Windows from showing the default 'Python' icon
+                if sys.platform == "win32":
+                    myappid = 'mycompany.myproduct.subproduct.version' # Arbitrary string
+                    ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(myappid)
+            else:
+                print(f"Icon not found at: {ico_path}")
+        except Exception as e:
+            print(f"Failed to set icon: {e}")
+
 
     def _setup_power_hook(self) -> None:
         if sys.platform != "win32":

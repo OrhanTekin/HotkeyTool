@@ -19,7 +19,9 @@ Features
 """
 from __future__ import annotations
 
+import ctypes
 import re
+import sys
 import tkinter as tk
 from typing import TYPE_CHECKING, List, Optional
 
@@ -147,6 +149,25 @@ class NotesWindow(ctk.CTkToplevel):
         self._build()
         self._reload_notes()
         self.withdraw()
+
+        self.after(200, self._apply_window_icon)
+        
+    # icon
+    def _apply_window_icon(self) -> None:
+        """Apply the .ico to the title bar and taskbar for this specific window."""
+        from utils.resource_path import resource_path
+        try:
+            ico_path = resource_path("assets/hotkeytool.ico")
+            if ico_path.exists():
+                # Sets the icon for the title bar
+                self.iconbitmap(str(ico_path))
+                
+                # Ensures Windows uses the app icon for the taskbar group
+                if sys.platform == "win32":
+                    myappid = 'mycompany.myproduct.subproduct.version'
+                    ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(myappid)
+        except Exception as e:
+            print(f"NotesWindow icon error: {e}")
 
     # ── layout ────────────────────────────────────────────────────────────────
 

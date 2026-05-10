@@ -1,60 +1,20 @@
 from __future__ import annotations
 
 import threading
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 import pystray
-from PIL import Image, ImageDraw, ImageFilter
+from PIL import Image
+
+from ui.icons import brand_logo
 
 if TYPE_CHECKING:
     from app import App
 
 
-def _make_icon_image(size: int = 64) -> Image.Image:
-    img = Image.new("RGBA", (size, size), (0, 0, 0, 0))
-    draw = ImageDraw.Draw(img)
-
-    # Circle background
-    pad = max(1, size // 20)
-    draw.ellipse([pad, pad, size - pad - 1, size - pad - 1], fill=(18, 22, 52, 255))
-
-    # Lightning bolt — tall, narrow, centered (same proportions as ICO)
-    bolt_norm = [
-        (0.56, 0.07),
-        (0.30, 0.52),
-        (0.48, 0.52),
-        (0.36, 0.93),
-        (0.64, 0.46),
-        (0.46, 0.46),
-        (0.68, 0.07),
-    ]
-    m = size * 0.14
-    w = size - 2 * m
-    bolt_px = [(m + x * w, m + y * w) for x, y in bolt_norm]
-
-    # Outer glow
-    gr = max(2, size // 14)
-    glow = Image.new("RGBA", (size, size), (0, 0, 0, 0))
-    ImageDraw.Draw(glow).polygon(bolt_px, fill=(30, 150, 255, 100))
-    glow = glow.filter(ImageFilter.GaussianBlur(radius=gr))
-    img = Image.alpha_composite(img, glow)
-
-    # Inner glow
-    glow2 = Image.new("RGBA", (size, size), (0, 0, 0, 0))
-    ImageDraw.Draw(glow2).polygon(bolt_px, fill=(60, 180, 255, 70))
-    glow2 = glow2.filter(ImageFilter.GaussianBlur(radius=max(2, gr // 2)))
-    img = Image.alpha_composite(img, glow2)
-
-    # Solid bolt + highlight
-    draw2 = ImageDraw.Draw(img)
-    draw2.polygon(bolt_px, fill=(85, 195, 255, 255))
-    cx = sum(p[0] for p in bolt_px) / len(bolt_px)
-    cy = sum(p[1] for p in bolt_px) / len(bolt_px)
-    hl = [(cx + (x - cx) * 0.55, cy + (y - cy) * 0.55) for x, y in bolt_px]
-    draw2.polygon(hl, fill=(205, 238, 255, 220))
-
-    return img
-
+# Get the path relative to this script
+ASSETS_PATH = Path(__file__).parent.parent / "assets" / "hotkeytool.ico"
 
 class TrayIcon:
     def __init__(self, app: "App") -> None:
@@ -63,7 +23,7 @@ class TrayIcon:
         self._thread: threading.Thread | None = None
 
     def start(self) -> None:
-        img = _make_icon_image()
+        img = Image.open(ASSETS_PATH)
         self._icon = pystray.Icon(
             "HotkeyTool",
             img,

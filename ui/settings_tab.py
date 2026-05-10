@@ -9,343 +9,308 @@ from typing import TYPE_CHECKING
 
 import customtkinter as ctk
 
+from ui import theme
+from ui.icons import brand_logo, icon as ui_icon
+from ui.widgets import (
+    DangerButton, GhostButton, PrimaryButton, SectionCard, SuccessButton, Switch,
+    section_title,
+)
+
 if TYPE_CHECKING:
     from app import App
 
 
 class SettingsTab(ctk.CTkFrame):
     def __init__(self, parent: ctk.CTkBaseClass, app: "App") -> None:
-        super().__init__(parent, fg_color="transparent")
+        super().__init__(parent, fg_color=theme.BG_BASE)
         self.app = app
         self._tut_visible = False
         self._build()
 
     def _build(self) -> None:
-        wrap = ctk.CTkScrollableFrame(self, fg_color="transparent")
-        wrap.pack(fill="both", expand=True, padx=36, pady=16)
+        outer = ctk.CTkScrollableFrame(
+            self, fg_color=theme.BG_BASE,
+            scrollbar_button_color=theme.BG_ELEVATED,
+            scrollbar_button_hover_color=theme.BORDER_STRONG,
+        )
+        outer.pack(fill="both", expand=True, padx=10, pady=4)
 
-        _light = ctk.get_appearance_mode() == "Light"
+        wrap = ctk.CTkFrame(outer, fg_color="transparent", width=760)
+        wrap.pack(fill="both", expand=True, padx=4, pady=(8, 40))
 
-        # ── Behaviour section ──────────────────────────────────────────────
-        self._section(wrap, "Behaviour")
+        # ── Behaviour ─────────────────────────────────────────────────────────
+        section_title(wrap, "Behaviour").pack(fill="x", padx=4, pady=(8, 6))
+        beh = SectionCard(wrap)
+        beh.pack(fill="x")
 
-        r1 = self._row(wrap)
-        ctk.CTkLabel(r1, text="Start with Windows",
-                     font=ctk.CTkFont(size=13)).pack(side="left")
         from utils.autostart import is_autostart_enabled
-        self._autostart_var = ctk.BooleanVar(value=is_autostart_enabled())
-        ctk.CTkSwitch(
-            r1, text="",
-            variable=self._autostart_var, onvalue=True, offvalue=False,
-            command=self._toggle_autostart,
-        ).pack(side="right")
-
-        r2 = self._row(wrap)
-        ctk.CTkLabel(r2, text="Minimize to tray on close",
-                     font=ctk.CTkFont(size=13)).pack(side="left")
-        self._tray_var = ctk.BooleanVar(
-            value=self.app.config.settings.minimize_to_tray_on_close
+        self._autostart_sw = self._set_row(
+            beh, "Start with Windows",
+            "Launch HotkeyTool automatically at login.",
+            on=is_autostart_enabled(), command=self._toggle_autostart,
         )
-        ctk.CTkSwitch(
-            r2, text="",
-            variable=self._tray_var, onvalue=True, offvalue=False,
+        self._set_divider(beh)
+        self._tray_sw = self._set_row(
+            beh, "Minimize to tray on close",
+            "Closing the window keeps the listener running.",
+            on=self.app.config.settings.minimize_to_tray_on_close,
             command=self._toggle_tray,
-        ).pack(side="right")
-
-        r_stats = self._row(wrap)
-        ctk.CTkLabel(r_stats, text="Show Stats Widget on startup",
-                     font=ctk.CTkFont(size=13)).pack(side="left")
-        self._stats_var = ctk.BooleanVar(
-            value=self.app.config.settings.stats_widget_on_startup
         )
-        ctk.CTkSwitch(
-            r_stats, text="",
-            variable=self._stats_var, onvalue=True, offvalue=False,
+        self._set_divider(beh)
+        self._stats_sw = self._set_row(
+            beh, "Show Stats widget on startup",
+            "Float a small stats panel when the app opens.",
+            on=self.app.config.settings.stats_widget_on_startup,
             command=self._toggle_stats_startup,
-        ).pack(side="right")
+        )
 
-        self._divider(wrap)
+        # ── Data ──────────────────────────────────────────────────────────────
+        section_title(wrap, "Data").pack(fill="x", padx=4, pady=(22, 6))
+        data = SectionCard(wrap)
+        data.pack(fill="x")
 
-        # ── Data section ───────────────────────────────────────────────────
-        self._section(wrap, "Data")
+        r = self._set_row_custom(data, "Bindings configuration",
+                                 "Backup or restore your bindings as JSON.")
+        GhostButton(r, text="Import", small=True, command=self._import,
+                    image=ui_icon("upload", 12, theme.TEXT_1), compound="left",
+                    ).pack(side="right", padx=(0, 12))
+        GhostButton(r, text="Export", small=True, command=self._export,
+                    image=ui_icon("download", 12, theme.TEXT_1), compound="left",
+                    ).pack(side="right", padx=(0, 4))
 
-        r3 = self._row(wrap)
-        ctk.CTkLabel(r3, text="Bindings JSON",
-                     font=ctk.CTkFont(size=13)).pack(side="left")
-        ctk.CTkButton(
-            r3, text="Export", width=100, height=30,
-            command=self._export,
-        ).pack(side="right", padx=(4, 0))
-        ctk.CTkButton(
-            r3, text="Import", width=100, height=30,
-            fg_color=("#1e2a3a", "#1e2a3a"), hover_color=("#2a3a4a", "#2a3a4a"),
-            command=self._import,
-        ).pack(side="right", padx=(0, 4))
+        self._set_divider(data)
 
-        # Config path info with selectable path + buttons
         from core.config import CONFIG_PATH
-        info = ctk.CTkFrame(wrap, corner_radius=6)
-        info.pack(fill="x", pady=(6, 0))
-        info_inner = ctk.CTkFrame(info, fg_color="transparent")
-        info_inner.pack(fill="x", padx=8, pady=6)
+        r = self._set_row_custom(data, "Config file", str(CONFIG_PATH), mono_desc=True)
+        GhostButton(r, text="Open folder", small=True, command=self._open_config_folder,
+                    image=ui_icon("folder", 12, theme.TEXT_1), compound="left",
+                    ).pack(side="right", padx=(0, 12))
 
-        ctk.CTkLabel(info_inner, text="Config:",
-                     font=ctk.CTkFont(size=10),
-                     text_color=("#555577", "#555577")).pack(side="left")
-        self._config_path_var = tk.StringVar(value=str(CONFIG_PATH))
-        _card_bg = info.cget("fg_color")
-        path_entry = tk.Entry(
-            info_inner, textvariable=self._config_path_var, state="readonly",
-            readonlybackground="#ebebeb" if _light else "#2b2b2b",
-            fg="#444466" if _light else "#777799",
-            relief="flat", bd=0, highlightthickness=0,
-            font=("Consolas", 9),
-        )
-        path_entry.pack(side="left", fill="x", expand=True, padx=(4, 4))
-        ctk.CTkButton(
-            info_inner, text="Copy", width=50, height=24,
-            fg_color=("#1e2a3a", "#1e2a3a"), hover_color=("#2a3a4a", "#2a3a4a"),
-            font=ctk.CTkFont(size=10),
-            command=lambda: self._copy_text(str(CONFIG_PATH)),
-        ).pack(side="right", padx=(2, 0))
-        ctk.CTkButton(
-            info_inner, text="Open Folder", width=90, height=24,
-            fg_color=("#1e2a3a", "#1e2a3a"), hover_color=("#2a3a4a", "#2a3a4a"),
-            font=ctk.CTkFont(size=10),
-            command=self._open_config_folder,
-        ).pack(side="right", padx=(4, 2))
+        # ── Windows Integration ──────────────────────────────────────────────
+        section_title(wrap, "Windows Integration").pack(fill="x", padx=4, pady=(22, 6))
+        win = SectionCard(wrap)
+        win.pack(fill="x")
 
-        self._divider(wrap)
-
-        # ── Windows Integration section ────────────────────────────────────
-        self._section(wrap, "Windows Integration")
-
-        r4 = self._row(wrap)
-        ctk.CTkLabel(r4, text="Desktop shortcut",
-                     font=ctk.CTkFont(size=13)).pack(side="left")
-        self._shortcut_btn = ctk.CTkButton(
-            r4, text="", width=130, height=30,
-            command=self._toggle_shortcut,
-        )
-        self._shortcut_btn.pack(side="right")
+        r = self._set_row_custom(win, "Desktop shortcut",
+                                 "Place a launcher on the desktop.")
+        self._shortcut_btn = GhostButton(r, text="", small=True, command=self._toggle_shortcut)
+        self._shortcut_btn.pack(side="right", padx=(0, 12))
         self._refresh_shortcut_btn()
 
-        r5 = self._row(wrap)
-        ctk.CTkLabel(r5,
-                     text='Explorer: "Dateien in neuen Ordner bewegen"',
-                     font=ctk.CTkFont(size=13)).pack(side="left")
-        self._ctxmenu_btn = ctk.CTkButton(
-            r5, text="", width=130, height=30,
-            command=self._toggle_context_menu,
-        )
-        self._ctxmenu_btn.pack(side="right")
+        self._set_divider(win)
+
+        r = self._set_row_custom(win, "Explorer context menu",
+                                 'Right-click → "Move files to new folder".')
+        self._ctxmenu_btn = GhostButton(r, text="", small=True, command=self._toggle_context_menu)
+        self._ctxmenu_btn.pack(side="right", padx=(0, 12))
         self._refresh_ctxmenu_btn()
 
-        r6 = self._row(wrap)
-        ctk.CTkLabel(r6,
-                     text="Windows 11 classic context menu",
-                     font=ctk.CTkFont(size=13)).pack(side="left")
-        self._restart_btn = ctk.CTkButton(
-            r6, text="Restart Explorer", width=130, height=30,
-            fg_color=("#1e2a3a", "#1e2a3a"), hover_color=("#2a3a4a", "#2a3a4a"),
-            command=self._restart_explorer,
-        )
-        self._restart_btn.pack(side="right", padx=(4, 0))
-        self._classic_btn = ctk.CTkButton(
-            r6, text="", width=130, height=30,
-            command=self._toggle_classic_menu,
-        )
+        self._set_divider(win)
+
+        r = self._set_row_custom(win, "Classic context menu (Win 11)",
+                                 'Skips the "Show more options" hop.')
+        self._classic_btn = GhostButton(r, text="", small=True, command=self._toggle_classic_menu)
         self._classic_btn.pack(side="right", padx=(0, 4))
+        GhostButton(r, text="Restart Explorer", small=True, command=self._restart_explorer
+                    ).pack(side="right", padx=(0, 12))
         self._refresh_classic_btn()
 
-        info_lbl = ctk.CTkLabel(
-            wrap,
-            text=(
-                "Windows 11 hides custom entries behind \"Show more options\".\n"
-                "Enabling the classic menu makes the entry visible immediately on right-click."
-            ),
-            font=ctk.CTkFont(size=10),
-            text_color=("#555577", "#555577"),
-            justify="left",
-            anchor="w",
-        )
-        info_lbl.pack(fill="x", pady=(0, 4))
-
-        self._divider(wrap)
-
-        # ── Gemini AI section ──────────────────────────────────────────────
-        self._section(wrap, "Gemini AI  (free tier)")
+        # ── Gemini AI ─────────────────────────────────────────────────────────
+        section_title(wrap, "Gemini AI · free tier").pack(fill="x", padx=4, pady=(22, 6))
+        gemini = SectionCard(wrap)
+        gemini.pack(fill="x")
 
         # API key row
-        key_row = self._row(wrap)
-        ctk.CTkLabel(key_row, text="API Key",
-                     font=ctk.CTkFont(size=13)).pack(side="left")
-        ctk.CTkButton(
-            key_row, text="Save", width=60, height=30,
-            command=self._save_gemini_key,
-        ).pack(side="right")
-        self._key_show_btn = ctk.CTkButton(
-            key_row, text="Show", width=55, height=30,
-            fg_color=("#1e2a3a", "#1e2a3a"), hover_color=("#2a3a4a", "#2a3a4a"),
-            command=self._toggle_key_visibility,
-        )
-        self._key_show_btn.pack(side="right", padx=(0, 4))
-        self._gemini_key_var = ctk.StringVar(
-            value=self.app.config.settings.gemini_api_key)
+        r = self._set_row_custom(gemini, "API key",
+                                 "Used by the 'Gemini: Ask' and 'Gemini: Clipboard' actions.")
+        self._gemini_key_var = ctk.StringVar(value=self.app.config.settings.gemini_api_key)
         self._key_entry = ctk.CTkEntry(
-            key_row, textvariable=self._gemini_key_var,
-            width=210, height=30, show="•",
-            placeholder_text="Paste your free key here…",
+            r, textvariable=self._gemini_key_var,
+            width=200, height=28, show="•",
+            fg_color=theme.BG_INPUT, border_color=theme.BORDER, border_width=1,
+            text_color=theme.TEXT_1, font=theme.font(11),
+            placeholder_text="paste key…", placeholder_text_color=theme.TEXT_4,
         )
-        self._key_entry.pack(side="right", padx=(0, 4))
+        self._key_entry.pack(side="right", padx=(4, 12))
+        self._key_show_btn = GhostButton(r, text="Show", small=True,
+                                         command=self._toggle_key_visibility)
+        self._key_show_btn.pack(side="right", padx=2)
+        PrimaryButton(r, text="Save", small=True, command=self._save_gemini_key
+                      ).pack(side="right", padx=2)
 
-        # Info card
-        info_outer = ctk.CTkFrame(wrap, corner_radius=6)
-        info_outer.pack(fill="x", pady=(4, 0))
+        self._set_divider(gemini)
 
-        # Clickable URL + copy
-        url_row = ctk.CTkFrame(info_outer, fg_color="transparent")
-        url_row.pack(fill="x", padx=10, pady=(8, 2))
-        ctk.CTkLabel(url_row, text="Free key (no credit card):",
-                     font=ctk.CTkFont(size=10),
-                     text_color=("#555577", "#555577")).pack(side="left")
+        # API key URL + tutorial
+        info_row = ctk.CTkFrame(gemini, fg_color="transparent")
+        info_row.pack(fill="x", padx=14, pady=(10, 6))
+        ctk.CTkLabel(info_row, text="Free key (no credit card):",
+                     font=theme.font(11), text_color=theme.TEXT_3,
+                     fg_color="transparent",
+                     ).pack(side="left")
         ctk.CTkButton(
-            url_row, text="aistudio.google.com/apikey",
-            font=ctk.CTkFont(size=10),
-            fg_color="transparent", hover_color=("#1a1a2e", "#1a1a2e"),
-            text_color=("#5588dd", "#5588dd"),
+            info_row, text="aistudio.google.com/apikey",
+            font=theme.font(11),
+            fg_color="transparent", hover_color=theme.BG_HOVER,
+            text_color=theme.ACCENT,
             width=10, height=22, cursor="hand2",
             command=lambda: webbrowser.open("https://aistudio.google.com/apikey"),
-        ).pack(side="left", padx=(2, 2))
-        ctk.CTkButton(
-            url_row, text="Copy URL", width=70, height=22,
-            fg_color=("#1e2a3a", "#1e2a3a"), hover_color=("#2a3a4a", "#2a3a4a"),
-            font=ctk.CTkFont(size=10),
-            command=lambda: self._copy_text("https://aistudio.google.com/apikey"),
-        ).pack(side="left", padx=2)
+        ).pack(side="left", padx=4)
+        GhostButton(info_row, text="Copy URL", small=True,
+                    command=lambda: self._copy_text("https://aistudio.google.com/apikey")
+                    ).pack(side="left", padx=2)
 
-        # Tutorial toggle
-        tut_header = ctk.CTkFrame(info_outer, fg_color="transparent")
-        tut_header.pack(fill="x", padx=10, pady=(2, 0))
         self._tut_btn = ctk.CTkButton(
-            tut_header, text="▶  Setup Tutorial",
-            font=ctk.CTkFont(size=10),
-            fg_color="transparent", hover_color=("#1a1a2e", "#1a1a2e"),
-            text_color=("#6677aa", "#6677aa"),
-            anchor="w", width=10, height=22,
+            gemini, text="▶  Setup Tutorial",
+            font=theme.font(11),
+            fg_color="transparent", hover_color=theme.BG_HOVER,
+            text_color=theme.TEXT_3, anchor="w",
             command=self._toggle_tutorial,
         )
-        self._tut_btn.pack(side="left")
+        self._tut_btn.pack(fill="x", padx=14, pady=(0, 4))
 
-        # Tutorial content frame (hidden initially)
-        self._tut_frame = ctk.CTkFrame(info_outer, corner_radius=4)
+        self._tut_frame = ctk.CTkFrame(
+            gemini, fg_color=theme.BG_BASE, corner_radius=6,
+            border_color=theme.BORDER_SOFT, border_width=1,
+        )
         ctk.CTkLabel(
             self._tut_frame,
             text=(
                 "1.  Click 'Create API Key'\n"
-                "2.  Select 'Default Gemini Project'  →  Create\n"
+                "2.  Select 'Default Gemini Project' → Create\n"
                 "3.  Copy the API key and paste it in the field above"
             ),
-            font=ctk.CTkFont(size=10),
-            text_color=("#8899bb", "#8899bb"),
+            font=theme.font(11),
+            text_color=theme.TEXT_2, fg_color="transparent",
             justify="left", anchor="w",
         ).pack(padx=14, pady=8, fill="x")
 
-        # Actions description
         ctk.CTkLabel(
-            info_outer,
+            gemini,
             text="Actions: 'Gemini: Clipboard' — image/text → Gemini → clipboard\n"
                  "         'Gemini: Ask'       — open floating chat window",
-            font=ctk.CTkFont(size=10),
-            text_color=("#555577", "#555577"),
+            font=theme.font(11), text_color=theme.TEXT_3,
+            fg_color="transparent",
             justify="left", anchor="w",
-        ).pack(padx=10, pady=(2, 8), fill="x")
+        ).pack(padx=14, pady=(2, 12), fill="x")
 
-        self._divider(wrap)
-
-        # ── About section ──────────────────────────────────────────────────
-        self._section(wrap, "About")
-        about = ctk.CTkFrame(wrap, corner_radius=8)
+        # ── About ─────────────────────────────────────────────────────────────
+        section_title(wrap, "About").pack(fill="x", padx=4, pady=(22, 6))
+        about = SectionCard(wrap)
         about.pack(fill="x")
+
+        about_row = ctk.CTkFrame(about, fg_color="transparent")
+        about_row.pack(fill="x", padx=14, pady=14)
+
+        # Same gradient brand logo as the app header (top-left), at 40px.
         ctk.CTkLabel(
-            about,
-            text="HotkeyTool  v1.0\nGlobal hotkey manager for Windows 11",
-            font=ctk.CTkFont(size=12),
-            text_color=("#777799", "#777799"),
-            justify="left",
-        ).pack(padx=14, pady=10, anchor="w")
+            about_row, text="", image=brand_logo(40),
+            width=40, height=40, fg_color="transparent",
+        ).pack(side="left", padx=(0, 12))
 
-    # ── helpers ───────────────────────────────────────────────────────────────
-
-    def _section(self, parent: ctk.CTkBaseClass, title: str) -> None:
+        text = ctk.CTkFrame(about_row, fg_color="transparent")
+        text.pack(side="left", anchor="w")
         ctk.CTkLabel(
-            parent, text=title,
-            font=ctk.CTkFont(size=14, weight="bold"),
-            text_color=("#99aacc", "#99aacc"),
-            anchor="w",
-        ).pack(fill="x", pady=(6, 2))
+            text, text="HotkeyTool · v1.0",
+            font=theme.font(13, "bold"),
+            text_color=theme.TEXT_1, fg_color="transparent", anchor="w",
+        ).pack(anchor="w")
+        ctk.CTkLabel(
+            text, text="Global hotkey manager and productivity suite for Windows 11.",
+            font=theme.font(11), text_color=theme.TEXT_3,
+            fg_color="transparent", anchor="w",
+        ).pack(anchor="w")
 
-    def _row(self, parent: ctk.CTkBaseClass) -> ctk.CTkFrame:
-        row = ctk.CTkFrame(parent, fg_color="transparent", height=42)
-        row.pack(fill="x", pady=2)
+    # ── row helpers ───────────────────────────────────────────────────────────
+
+    def _set_row(self, parent, label: str, desc: str, *, on: bool,
+                 command) -> Switch:
+        row = ctk.CTkFrame(parent, fg_color="transparent", height=58)
+        row.pack(fill="x", padx=14, pady=2)
         row.pack_propagate(False)
+        text = ctk.CTkFrame(row, fg_color="transparent")
+        text.pack(side="left", fill="x", expand=True, pady=10)
+        ctk.CTkLabel(
+            text, text=label, font=theme.font(13, "bold"),
+            text_color=theme.TEXT_1, fg_color="transparent", anchor="w",
+        ).pack(anchor="w")
+        ctk.CTkLabel(
+            text, text=desc, font=theme.font(11),
+            text_color=theme.TEXT_3, fg_color="transparent", anchor="w",
+        ).pack(anchor="w")
+        sw = Switch(row, on=on, command=lambda v: command(v))
+        sw.pack(side="right", pady=10)
+        return sw
+
+    def _set_row_custom(self, parent, label: str, desc: str, *,
+                        mono_desc: bool = False) -> ctk.CTkFrame:
+        row = ctk.CTkFrame(parent, fg_color="transparent", height=58)
+        row.pack(fill="x", padx=14, pady=2)
+        row.pack_propagate(False)
+        text = ctk.CTkFrame(row, fg_color="transparent")
+        text.pack(side="left", fill="x", expand=True, pady=10)
+        ctk.CTkLabel(
+            text, text=label, font=theme.font(13, "bold"),
+            text_color=theme.TEXT_1, fg_color="transparent", anchor="w",
+        ).pack(anchor="w")
+        ctk.CTkLabel(
+            text, text=desc,
+            font=theme.mono(11) if mono_desc else theme.font(11),
+            text_color=theme.TEXT_3, fg_color="transparent", anchor="w",
+        ).pack(anchor="w")
         return row
 
-    def _divider(self, parent: ctk.CTkBaseClass) -> None:
-        ctk.CTkFrame(parent, height=1,
-                     fg_color=("#2a2a44", "#2a2a44")).pack(fill="x", pady=14)
+    def _set_divider(self, parent) -> None:
+        ctk.CTkFrame(parent, height=1, fg_color=theme.BORDER_SOFT, corner_radius=0
+                     ).pack(fill="x", padx=4)
 
     # ── callbacks ─────────────────────────────────────────────────────────────
 
-    def _toggle_autostart(self) -> None:
+    def _toggle_autostart(self, on: bool) -> None:
         from utils.autostart import enable_autostart, disable_autostart
-        if self._autostart_var.get():
+        if on:
             enable_autostart()
         else:
             disable_autostart()
-        self.app.config.settings.autostart = self._autostart_var.get()
+        self.app.config.settings.autostart = on
         from core.config import save_config
         save_config(self.app.config)
+        if self.app.window:
+            self.app.window.toast("Setting saved")
 
-    def _toggle_tray(self) -> None:
-        self.app.config.settings.minimize_to_tray_on_close = self._tray_var.get()
+    def _toggle_tray(self, on: bool) -> None:
+        self.app.config.settings.minimize_to_tray_on_close = on
         from core.config import save_config
         save_config(self.app.config)
+        if self.app.window:
+            self.app.window.toast("Setting saved")
 
-    def _toggle_stats_startup(self) -> None:
-        self.app.config.settings.stats_widget_on_startup = self._stats_var.get()
+    def _toggle_stats_startup(self, on: bool) -> None:
+        self.app.config.settings.stats_widget_on_startup = on
         from core.config import save_config
         save_config(self.app.config)
+        if self.app.window:
+            self.app.window.toast("Setting saved")
 
     def _refresh_shortcut_btn(self) -> None:
         from setup import shortcut_exists
         if shortcut_exists():
-            self._shortcut_btn.configure(
-                text="Remove shortcut",
-                fg_color=("#5c1a1a", "#5c1a1a"),
-                hover_color=("#7a2222", "#7a2222"),
-            )
+            self._shortcut_btn.configure(text="Remove shortcut")
         else:
-            self._shortcut_btn.configure(
-                text="Create shortcut",
-                fg_color=("#163a22", "#163a22"),
-                hover_color=("#1e4a2a", "#1e4a2a"),
-            )
+            self._shortcut_btn.configure(text="Create shortcut")
 
     def _refresh_ctxmenu_btn(self) -> None:
         from setup import context_menu_registered
         if context_menu_registered():
-            self._ctxmenu_btn.configure(
-                text="Unregister",
-                fg_color=("#5c1a1a", "#5c1a1a"),
-                hover_color=("#7a2222", "#7a2222"),
-            )
+            self._ctxmenu_btn.configure(text="Unregister")
         else:
-            self._ctxmenu_btn.configure(
-                text="Register",
-                fg_color=("#163a22", "#163a22"),
-                hover_color=("#1e4a2a", "#1e4a2a"),
-            )
+            self._ctxmenu_btn.configure(text="Register")
+
+    def _refresh_classic_btn(self) -> None:
+        from setup import classic_context_menu_enabled
+        if classic_context_menu_enabled():
+            self._classic_btn.configure(text="Disable")
+        else:
+            self._classic_btn.configure(text="Enable")
 
     def _toggle_shortcut(self) -> None:
         from setup import (
@@ -363,21 +328,6 @@ class SettingsTab(ctk.CTkFrame):
             messagebox.showerror("Error", str(exc))
         self._refresh_shortcut_btn()
 
-    def _refresh_classic_btn(self) -> None:
-        from setup import classic_context_menu_enabled
-        if classic_context_menu_enabled():
-            self._classic_btn.configure(
-                text="Disable (Win 11 style)",
-                fg_color=("#5c1a1a", "#5c1a1a"),
-                hover_color=("#7a2222", "#7a2222"),
-            )
-        else:
-            self._classic_btn.configure(
-                text="Enable (recommended)",
-                fg_color=("#163a22", "#163a22"),
-                hover_color=("#1e4a2a", "#1e4a2a"),
-            )
-
     def _toggle_classic_menu(self) -> None:
         from setup import (classic_context_menu_enabled,
                            enable_classic_context_menu,
@@ -392,15 +342,15 @@ class SettingsTab(ctk.CTkFrame):
         self._refresh_classic_btn()
         messagebox.showinfo(
             "Context Menu",
-            "Click 'Restart Explorer' to apply the change immediately,\n"
+            "Click 'Restart Explorer' to apply the change immediately, "
             "or sign out and back in.",
         )
 
     def _restart_explorer(self) -> None:
         if messagebox.askyesno(
             "Restart Explorer",
-            "This will briefly close and reopen Windows Explorer\n"
-            "(all open folder windows will close).\n\nContinue?",
+            "This will briefly close and reopen Windows Explorer "
+            "(all open folder windows will close). Continue?",
         ):
             from setup import restart_explorer
             restart_explorer()
@@ -425,7 +375,8 @@ class SettingsTab(ctk.CTkFrame):
         self.app.config.settings.gemini_api_key = self._gemini_key_var.get().strip()
         from core.config import save_config
         save_config(self.app.config)
-        self.focus_set()
+        if self.app.window:
+            self.app.window.toast("API key saved")
 
     def _toggle_key_visibility(self) -> None:
         if self._key_entry.cget("show") == "•":
@@ -441,13 +392,15 @@ class SettingsTab(ctk.CTkFrame):
             self._tut_btn.configure(text="▶  Setup Tutorial")
             self._tut_visible = False
         else:
-            self._tut_frame.pack(fill="x", padx=10, pady=(0, 4))
+            self._tut_frame.pack(fill="x", padx=14, pady=(0, 8))
             self._tut_btn.configure(text="▼  Setup Tutorial")
             self._tut_visible = True
 
     def _copy_text(self, text: str) -> None:
         self.clipboard_clear()
         self.clipboard_append(text)
+        if self.app.window:
+            self.app.window.toast("Copied")
 
     def _open_config_folder(self) -> None:
         from core.config import CONFIG_PATH
@@ -463,7 +416,8 @@ class SettingsTab(ctk.CTkFrame):
             return
         from core.config import export_config
         export_config(self.app.config, Path(path))
-        messagebox.showinfo("Export", f"Bindings exported to:\n{path}")
+        if self.app.window:
+            self.app.window.toast("Bindings exported")
 
     def _import(self) -> None:
         path = filedialog.askopenfilename(
@@ -479,7 +433,6 @@ class SettingsTab(ctk.CTkFrame):
             self.app.listener.reload()
             if self.app.window:
                 self.app.window.refresh_bindings()
-            messagebox.showinfo("Import",
-                                f"Imported {len(new_cfg.bindings)} binding(s) successfully.")
+                self.app.window.toast(f"Imported {len(new_cfg.bindings)} bindings")
         except Exception as exc:
             messagebox.showerror("Import Error", f"Failed to import:\n{exc}")

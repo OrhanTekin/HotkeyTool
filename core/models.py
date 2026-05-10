@@ -209,6 +209,31 @@ class Todo:
 
 
 @dataclass
+class SavedTimer:
+    id: str
+    label: str = "Timer"
+    hours: int = 0
+    minutes: int = 5
+    seconds: int = 0
+
+    @classmethod
+    def new(cls) -> "SavedTimer":
+        return cls(id=str(uuid.uuid4()))
+
+    def to_dict(self) -> dict:
+        return {"id": self.id, "label": self.label,
+                "hours": self.hours, "minutes": self.minutes, "seconds": self.seconds}
+
+    @classmethod
+    def from_dict(cls, d: dict) -> "SavedTimer":
+        return cls(id=d.get("id", str(uuid.uuid4())),
+                   label=d.get("label", "Timer"),
+                   hours=d.get("hours", 0),
+                   minutes=d.get("minutes", 5),
+                   seconds=d.get("seconds", 0))
+
+
+@dataclass
 class AppSettings:
     autostart: bool = False
     minimize_to_tray_on_close: bool = True
@@ -249,6 +274,7 @@ class AppConfig:
     todos: List[Todo] = field(default_factory=list)
     planner_categories: List[str] = field(
         default_factory=lambda: ["Work", "Personal", "Health", "Finance"])
+    timers: List[SavedTimer] = field(default_factory=list)
 
     def to_dict(self) -> dict:
         return {"version": self.version, "listening": self.listening,
@@ -260,7 +286,8 @@ class AppConfig:
                 "notes":     [n.to_dict() for n in self.notes],
                 "clipboard_history": self.clipboard_history[:10],
                 "todos":     [t.to_dict() for t in self.todos],
-                "planner_categories": self.planner_categories}
+                "planner_categories": self.planner_categories,
+                "timers":    [t.to_dict() for t in self.timers]}
 
     @classmethod
     def from_dict(cls, d: dict) -> "AppConfig":
@@ -276,4 +303,5 @@ class AppConfig:
                    clipboard_history=d.get("clipboard_history", []),
                    todos=[Todo.from_dict(t) for t in d.get("todos", [])],
                    planner_categories=d.get(
-                       "planner_categories", ["Work", "Personal", "Health", "Finance"]))
+                       "planner_categories", ["Work", "Personal", "Health", "Finance"]),
+                   timers=[SavedTimer.from_dict(t) for t in d.get("timers", [])])

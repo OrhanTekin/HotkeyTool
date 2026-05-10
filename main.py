@@ -8,6 +8,31 @@ import ctypes
 import sys
 
 
+def _enable_dpi_awareness() -> None:
+    """Tell Windows we'll handle DPI ourselves, so the window isn't bitmap-
+    scaled to a blurry mess on HiDPI displays. Must run before any Tk window
+    is created. Tries Per-Monitor-V2 → Per-Monitor → System in that order.
+    """
+    if sys.platform != "win32":
+        return
+    try:
+        # Win 10 1703+. -4 = DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2
+        if ctypes.windll.user32.SetProcessDpiAwarenessContext(-4):
+            return
+    except Exception:
+        pass
+    try:
+        # Win 8.1+. 2 = PROCESS_PER_MONITOR_DPI_AWARE
+        ctypes.windll.shcore.SetProcessDpiAwareness(2)
+        return
+    except Exception:
+        pass
+    try:
+        ctypes.windll.user32.SetProcessDPIAware()
+    except Exception:
+        pass
+
+
 def _single_instance_check() -> None:
     ERROR_ALREADY_EXISTS = 183
     mutex = ctypes.windll.kernel32.CreateMutexW(None, False, "HotkeyToolSingleInstanceMutex")
@@ -24,6 +49,7 @@ def _single_instance_check() -> None:
 
 
 def main() -> None:
+    _enable_dpi_awareness()
     _mutex = _single_instance_check()  # noqa: F841
 
     try:

@@ -61,7 +61,9 @@ class App:
     def run(self) -> None:
         from ui.main_window import MainWindow
         from ui.tray import TrayIcon
+        from utils.fonts import load_app_fonts
 
+        load_app_fonts()
         ctk.set_appearance_mode("dark")
         ctk.set_default_color_theme("blue")
 
@@ -86,6 +88,8 @@ class App:
         if self.config.listening:
             self.listener.start()
             self.window.update_listening_state()
+            # Boot-time recovery: SetWindowsHookEx can fail before Windows input subsystem is ready
+            self.window.after(15000, self._do_resume_restart)
 
         self.scheduler.start()
         self.clipboard.start()
@@ -244,6 +248,7 @@ class App:
             for delay in (3000, 7000, 15000, 30000):
                 self.window.after(delay, self._do_resume_restart)
 
+    
     def _do_resume_restart(self) -> None:
         """Replace keyboard._listener with a fresh instance and re-register.
 
@@ -295,6 +300,7 @@ class App:
 
         if self.window:
             self.window.update_status("Reconnected after sleep")
+
 
     def _start_sleep_detector(self) -> None:
         """Fallback sleep detection via monotonic-clock jump.

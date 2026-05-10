@@ -9,22 +9,23 @@ from typing import TYPE_CHECKING
 import customtkinter as ctk
 
 from core.models import Binding
+from ui import theme
+from ui.icons import icon as ui_icon
+from ui.widgets import (
+    ActionTag, DangerButton, GhostButton, HotkeyChip, IconButton,
+    PrimaryButton, Row, Search, Switch,
+)
 
 if TYPE_CHECKING:
     from app import App
 
-# ── colour constants ──────────────────────────────────────────────────────────
-_ROW_EVEN  = ("#1a1a2e", "#1a1a2e")
-_ROW_ODD   = ("#16162a", "#16162a")
-_CHIP_BG   = ("#1e3a5c", "#1e3a5c")
-_CHIP_DIM  = ("#252535", "#252535")
-
 
 class BindingsTab(ctk.CTkFrame):
     def __init__(self, parent: ctk.CTkBaseClass, app: "App") -> None:
-        super().__init__(parent, fg_color="transparent")
+        super().__init__(parent, fg_color=theme.BG_BASE)
         self.app = app
         self._rows: list[_BindingRow] = []
+        self._query = ""
         self._build()
         self.refresh()
 
@@ -32,56 +33,78 @@ class BindingsTab(ctk.CTkFrame):
 
     def _build(self) -> None:
         # Toolbar
-        tb = ctk.CTkFrame(self, fg_color="transparent", height=50)
-        tb.pack(fill="x", padx=4, pady=(4, 0))
+        tb = ctk.CTkFrame(
+            self, fg_color="transparent", height=58, corner_radius=0,
+        )
+        tb.pack(fill="x", padx=18, pady=(14, 8))
         tb.pack_propagate(False)
 
-        ctk.CTkButton(
-            tb, text="+ Add Binding",
-            width=148, height=36,
-            font=ctk.CTkFont(size=13, weight="bold"),
-            command=self._add,
-        ).pack(side="left", padx=(0, 8))
+        PrimaryButton(tb, text="+  Add Binding", command=self._add).pack(side="left")
 
-        self._listen_btn = ctk.CTkButton(
-            tb, text="", width=172, height=36,
-            font=ctk.CTkFont(size=13),
-            command=self.app.toggle_listening,
+        ctk.CTkLabel(
+            tb, text="Bind a hotkey to a sequence of actions.",
+            font=theme.font(11), text_color=theme.TEXT_3,
+            fg_color="transparent",
+        ).pack(side="left", padx=(12, 0))
+
+        self._search = Search(
+            tb, placeholder="Search bindings...",
+            on_change=self._on_search, width=280, height=32,
         )
-        self._listen_btn.pack(side="left")
-        self._refresh_listen_btn()
+        self._search.pack(side="right")
 
-        # Column headers
-        hdr = ctk.CTkFrame(self, fg_color=("#0f0f22", "#0f0f22"), height=28, corner_radius=6)
-        hdr.pack(fill="x", padx=4, pady=(6, 0))
-        hdr.pack_propagate(False)
+        # Toolbar underline
+        ctk.CTkFrame(self, height=1, fg_color=theme.BORDER_SOFT, corner_radius=0
+                     ).pack(fill="x")
 
-        for text, width in [
-            ("",        44),
-            ("Hotkey",  118),
-            ("Name",    172),
-            ("Actions", 0),     # expands
-        ]:
+        # Column header — mirrors the exact spacing of _BindingRow so each label
+        # shares the same x coordinate as its corresponding column content.
+        col_head = ctk.CTkFrame(self, fg_color="transparent", height=24)
+        col_head.pack(fill="x", padx=12, pady=(10, 4))
+        col_head.pack_propagate(False)
+
+        def _col_lbl(text, *, width: int | None = None, anchor: str = "center", **pack_kw):
+            kw = {"width": width} if width else {}
             ctk.CTkLabel(
-                hdr, text=text, width=width, anchor="w",
-                font=ctk.CTkFont(size=11, weight="bold"),
-                text_color=("#666688", "#666688"),
-            ).pack(side="left", padx=(8 if width == 44 else 4, 0))
+                col_head, text=text.upper(),
+                font=theme.font(10, "bold"), text_color=theme.TEXT_4,
+                anchor=anchor, fg_color="transparent", **kw,
+            ).pack(**pack_kw)
+
+        # "Actions" packed on the right first so Name's expand fills the middle.
+        _col_lbl("Actions", side="right", padx=(0, 16))
+        # 26px spacer aligns "Active" label with the switch's left edge in rows.
+        ctk.CTkFrame(col_head, fg_color="transparent", width=26).pack(side="left")
+        # "Active" covers the switch knob + its right gap (32 + 12 = 44px).
+        _col_lbl("Active", width=44, side="left")
+        # "Hotkey" at 180 + 12 padx = 192 total, matching chip_col width in rows.
+        _col_lbl("Hotkey", width=180, side="left", padx=(0, 12))
+        # "Name" left-aligned to match where the name text starts in each row.
+        _col_lbl("Name", anchor="w", side="left", fill="x", expand=True, padx=(0, 8))
 
         # Scrollable list
         self._scroll = ctk.CTkScrollableFrame(
-            self, fg_color="transparent",
+            self, fg_color=theme.BG_BASE, scrollbar_button_color=theme.BG_ELEVATED,
+            scrollbar_button_hover_color=theme.BORDER_STRONG,
         )
-        self._scroll.pack(fill="both", expand=True, padx=4, pady=(4, 4))
+        self._scroll.pack(fill="both", expand=True, padx=10, pady=(0, 8))
 
-        # Empty-state placeholder (shown only when list is empty)
-        self._empty = ctk.CTkLabel(
-            self._scroll,
-            text="No bindings yet.\nClick '+ Add Binding' to get started.",
-            font=ctk.CTkFont(size=14),
-            text_color=("#444466", "#444466"),
-            justify="center",
-        )
+        # Empty state
+        self._empty = ctk.CTkFrame(self._scroll, fg_color="transparent")
+        ctk.CTkLabel(
+            self._empty, text="⚡",
+            font=theme.font(28),
+            text_color=theme.TEXT_3, fg_color=theme.BG_ELEVATED,
+            width=56, height=56, corner_radius=14,
+        ).pack(pady=(0, 14))
+        ctk.CTkLabel(
+            self._empty, text="No bindings yet",
+            font=theme.font(14, "bold"), text_color=theme.TEXT_1,
+        ).pack()
+        ctk.CTkLabel(
+            self._empty, text="Click '+ Add Binding' to bind a hotkey to a sequence of actions.",
+            font=theme.font(12), text_color=theme.TEXT_3, wraplength=320, justify="center",
+        ).pack(pady=(4, 0))
 
     # ── public ────────────────────────────────────────────────────────────────
 
@@ -89,19 +112,22 @@ class BindingsTab(ctk.CTkFrame):
         for row in self._rows:
             row.destroy()
         self._rows.clear()
+        self._empty.pack_forget()
 
         bindings = self.app.config.bindings
+        q = self._query.lower().strip()
+        if q:
+            bindings = [b for b in bindings if q in b.name.lower() or q in b.hotkey.lower()]
+
         if not bindings:
-            self._empty.pack(pady=48)
+            self._empty.pack(pady=60)
         else:
-            self._empty.pack_forget()
             for i, b in enumerate(bindings):
                 row = _BindingRow(self._scroll, self.app, b, i, self)
-                row.pack(fill="x", pady=(0, 2))
+                row.pack(fill="x", pady=(0, 6), padx=2)
                 self._rows.append(row)
 
     def move_binding(self, binding: Binding, direction: int) -> None:
-        """Move binding up (-1) or down (+1) in the list and save."""
         lst = self.app.config.bindings
         idx = lst.index(binding)
         new_idx = idx + direction
@@ -111,25 +137,15 @@ class BindingsTab(ctk.CTkFrame):
         self.app.save_and_reload()
 
     def update_listening_button(self) -> None:
-        self._refresh_listen_btn()
+        # listening pill lives in the global header now
+        if self.app.window:
+            self.app.window.update_listening_state()
 
     # ── internals ─────────────────────────────────────────────────────────────
 
-    def _refresh_listen_btn(self) -> None:
-        if self.app.listener.is_running():
-            self._listen_btn.configure(
-                text="\u25cf  Listening  ON",
-                fg_color=("#163a22", "#163a22"),
-                hover_color=("#1e4a2a", "#1e4a2a"),
-                text_color=("#55dd88", "#55dd88"),
-            )
-        else:
-            self._listen_btn.configure(
-                text="\u25cb  Listening  OFF",
-                fg_color=("#3a1616", "#3a1616"),
-                hover_color=("#4a1e1e", "#4a1e1e"),
-                text_color=("#dd5555", "#dd5555"),
-            )
+    def _on_search(self, q: str) -> None:
+        self._query = q
+        self.refresh()
 
     def _add(self) -> None:
         from ui.binding_editor import BindingEditor
@@ -138,17 +154,10 @@ class BindingsTab(ctk.CTkFrame):
 
 # ── row widget ────────────────────────────────────────────────────────────────
 
-class _BindingRow(ctk.CTkFrame):
-    def __init__(
-        self,
-        parent: ctk.CTkBaseClass,
-        app: "App",
-        binding: Binding,
-        index: int,
-        tab: BindingsTab,
-    ) -> None:
-        bg = _ROW_EVEN if index % 2 == 0 else _ROW_ODD
-        super().__init__(parent, fg_color=(bg[0], bg[1]), corner_radius=6, height=44)
+class _BindingRow(Row):
+    def __init__(self, parent, app: "App", binding: Binding, index: int,
+                 tab: BindingsTab) -> None:
+        super().__init__(parent, dim=not binding.enabled, height=58)
         self.pack_propagate(False)
         self.app = app
         self.binding = binding
@@ -158,119 +167,55 @@ class _BindingRow(ctk.CTkFrame):
     def _build(self) -> None:
         dim = not self.binding.enabled
 
-        # Up / down reorder buttons (side-by-side, directly in the row)
-        ctk.CTkButton(
-            self, text="▲", width=24, height=30,
-            font=ctk.CTkFont(size=10),
-            fg_color=("#1e2030", "#1e2030"), hover_color=("#2a2c44", "#2a2c44"),
-            text_color=("#8888bb", "#8888bb"),
-            command=lambda: self.tab.move_binding(self.binding, -1),
-        ).pack(side="left", padx=(6, 1))
-        ctk.CTkButton(
-            self, text="▼", width=24, height=30,
-            font=ctk.CTkFont(size=10),
-            fg_color=("#1e2030", "#1e2030"), hover_color=("#2a2c44", "#2a2c44"),
-            text_color=("#8888bb", "#8888bb"),
-            command=lambda: self.tab.move_binding(self.binding, 1),
-        ).pack(side="left", padx=(0, 4))
+        # Switch (left)
+        sw = Switch(self, on=self.binding.enabled, command=self._toggle)
+        sw.pack(side="left", padx=(14, 12), pady=10)
 
-        # Enable switch
-        self._sw = ctk.CTkSwitch(self, text="", width=46, height=22)
-        if self.binding.enabled:
-            self._sw.select()
-        else:
-            self._sw.deselect()
-        self._sw.configure(command=self._toggle)
-        self._sw.pack(side="left", padx=(2, 2))
+        # Fixed-width chip column: chip auto-sizes to content, transparent wrapper
+        # keeps the column exactly 192px (≤180px chip + 12px right gap) for
+        # alignment with the col header.
+        chip_col = ctk.CTkFrame(self, fg_color="transparent", width=192, height=58)
+        chip_col.pack_propagate(False)
+        chip_col.pack(side="left")
+        chip = HotkeyChip(chip_col, self.binding.hotkey, dim=dim)
+        chip.place(relx=0.5, rely=0.5, anchor="center")
 
-        # Hotkey chip
-        hotkey_text = self.binding.hotkey.upper() if self.binding.hotkey else "\u2014"
-        chip_bg  = _CHIP_DIM if dim else _CHIP_BG
-        chip_fg  = ("#555577", "#555577") if dim else ("#88ccff", "#88ccff")
+        # Center column: name only (no action tags)
+        center = ctk.CTkFrame(self, fg_color="transparent")
+        center.pack(side="left", fill="both", expand=True, padx=(0, 8))
         ctk.CTkLabel(
-            self, text=hotkey_text,
-            font=ctk.CTkFont(size=11, weight="bold", family="Courier New"),
-            width=112, anchor="center",
-            fg_color=(chip_bg[0], chip_bg[1]),
-            corner_radius=4,
-            text_color=(chip_fg[0], chip_fg[1]),
-        ).pack(side="left", padx=4, pady=7)
+            center, text=self.binding.name or "(unnamed)",
+            font=theme.font(13, "bold" if not dim else "normal"),
+            text_color=theme.TEXT_3 if dim else theme.TEXT_1,
+            fg_color="transparent", anchor="w",
+        ).pack(fill="both", expand=True)
 
-        # Name
-        name_col = ("#555577", "#555577") if dim else ("#d8d8ee", "#d8d8ee")
-        ctk.CTkLabel(
-            self, text=self.binding.name,
-            font=ctk.CTkFont(size=13),
-            width=168, anchor="w",
-            text_color=(name_col[0], name_col[1]),
-        ).pack(side="left", padx=4)
-
-        # Buttons — packed BEFORE summary so they always get their space
-        btn_frm = ctk.CTkFrame(self, fg_color="transparent")
-        btn_frm.pack(side="right", padx=6)
-
-        ctk.CTkButton(
-            btn_frm, text="Delete", width=62, height=28,
-            fg_color=("#5c1a1a", "#5c1a1a"), hover_color=("#7a2222", "#7a2222"),
-            font=ctk.CTkFont(size=11),
-            command=self._delete,
-        ).pack(side="right", padx=(2, 0))
-
-        ctk.CTkButton(
-            btn_frm, text="Dupe", width=54, height=28,
-            fg_color=("#1e2a3a", "#1e2a3a"), hover_color=("#2a3a4a", "#2a3a4a"),
-            font=ctk.CTkFont(size=11),
-            command=self._duplicate,
-        ).pack(side="right", padx=2)
-
-        ctk.CTkButton(
-            btn_frm, text="Edit", width=54, height=28,
-            fg_color=("#1a3028", "#1a3028"), hover_color=("#243c32", "#243c32"),
-            font=ctk.CTkFont(size=11),
-            command=self._edit,
-        ).pack(side="right", padx=2)
-
-        # Actions summary — fills remaining space, truncated to prevent overflow
-        ctk.CTkLabel(
-            self, text=self._summary(),
-            font=ctk.CTkFont(size=11),
-            anchor="w",
-            width=1,          # allow shrinking; expand does the stretching
-            text_color=("#777799", "#777799"),
-        ).pack(side="left", padx=4, fill="x", expand=True)
-
-    def _summary(self) -> str:
-        if not self.binding.actions:
-            return "No actions"
-        _icons = {
-            "open_url":       "URL",
-            "open_app":       "App",
-            "type_text":      "Text",
-            "run_command":    "Cmd",
-            "send_keys":      "Keys",
-            "media_control":  "Media",
-            "toggle_topmost": "Top",
-            "replay_macro":   "Macro",
-        }
-        parts = []
-        for a in self.binding.actions[:3]:
-            tag = _icons.get(a.type, a.type)
-            val = a.value[:18] if a.value else ""
-            if a.type == "open_app":
-                val = os.path.basename(a.value)[:18]
-            parts.append(f"{tag}: {val}" if val else tag)
-        extra = len(self.binding.actions) - 3
-        if extra > 0:
-            parts.append(f"+{extra}")
-        text = "  \u2192  ".join(parts)
-        # Hard cap so very long values never push the buttons
-        return text[:72] + "\u2026" if len(text) > 72 else text
+        # Right: hover-revealed icon buttons matching the design.
+        actions = ctk.CTkFrame(self, fg_color="transparent")
+        IconButton(actions, image=ui_icon("chevU", 12, theme.TEXT_2),
+                   command=lambda: self.tab.move_binding(self.binding, -1),
+                   kind="ghost", size=26).pack(side="left", padx=2)
+        IconButton(actions, image=ui_icon("chevD", 12, theme.TEXT_2),
+                   command=lambda: self.tab.move_binding(self.binding, 1),
+                   kind="ghost", size=26).pack(side="left", padx=2)
+        IconButton(actions, image=ui_icon("edit", 12, theme.TEXT_2),
+                   command=self._edit, kind="ghost", size=26
+                   ).pack(side="left", padx=2)
+        IconButton(actions, image=ui_icon("dupe", 12, theme.TEXT_2),
+                   command=self._duplicate, kind="ghost", size=26
+                   ).pack(side="left", padx=2)
+        IconButton(actions, image=ui_icon("trash", 12, theme.DANGER),
+                   command=self._delete, kind="danger", size=26
+                   ).pack(side="left", padx=(2, 12))
+        self.set_actions_widget(actions, {"side": "right"})
 
     # ── callbacks ─────────────────────────────────────────────────────────────
 
-    def _toggle(self) -> None:
-        self.binding.enabled = bool(self._sw.get())
+    def _toggle(self, on: bool) -> None:
+        self.binding.enabled = on
         self.app.save_and_reload()
+        if self.app.window:
+            self.app.window.toast("Binding updated")
 
     def _edit(self) -> None:
         from ui.binding_editor import BindingEditor
@@ -279,6 +224,8 @@ class _BindingRow(ctk.CTkFrame):
     def _duplicate(self) -> None:
         self.app.config.bindings.append(self.binding.duplicate())
         self.app.save_and_reload()
+        if self.app.window:
+            self.app.window.toast("Binding duplicated")
 
     def _delete(self) -> None:
         try:
@@ -286,3 +233,28 @@ class _BindingRow(ctk.CTkFrame):
         except ValueError:
             pass
         self.app.save_and_reload()
+        if self.app.window:
+            self.app.window.toast("Binding deleted")
+
+
+# ── helpers ─────────────────────────────────────────────────────────────────────
+
+def _kind_label(action_type: str) -> str:
+    return {
+        "open_url":       "URL",
+        "open_app":       "App",
+        "type_text":      "Text",
+        "run_command":    "Cmd",
+        "send_keys":      "Keys",
+        "media_control":  "Media",
+        "toggle_topmost": "Top",
+        "replay_macro":   "Macro",
+    }.get(action_type, action_type)
+
+
+def _short_value(action) -> str:
+    if not action.value:
+        return ""
+    if action.type == "open_app":
+        return os.path.basename(action.value)[:18]
+    return action.value[:24]

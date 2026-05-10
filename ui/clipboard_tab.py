@@ -9,19 +9,22 @@ so it works with apps that use delayed clipboard rendering (Chrome, Edge, …).
 from __future__ import annotations
 
 import ctypes
+import time
 from typing import TYPE_CHECKING
 
 import customtkinter as ctk
+
+from ui import theme
+from ui.widgets import DangerButton, GhostButton
 
 if TYPE_CHECKING:
     from app import App
 
 _POLL_MS    = 500
 _MAX_IMAGES = 5
-_THUMB_W    = 160
-_THUMB_H    = 100
+_THUMB_W    = 80
+_THUMB_H    = 50
 
-# Windows clipboard format IDs
 _CF_UNICODETEXT = 13
 _CF_DIB         = 8
 _CF_DIBV5       = 17
@@ -29,56 +32,63 @@ _CF_DIBV5       = 17
 
 class ClipboardTab(ctk.CTkFrame):
     def __init__(self, parent: ctk.CTkBaseClass, app: "App") -> None:
-        super().__init__(parent, fg_color="transparent")
+        super().__init__(parent, fg_color=theme.BG_BASE)
         self.app = app
-        self._buttons: list[ctk.CTkButton] = []
-        self._image_history: list = []      # PIL Image objects
-        self._image_widgets:  list = []     # CTkFrame rows (keep refs to avoid GC)
-        self._ctk_images:     list = []     # CTkImage refs (prevent GC)
-        # Initialise to the current sequence number so the first poll doesn't
-        # immediately capture whatever happens to be in the clipboard right now.
+        self._buttons: list = []
+        self._image_history: list = []
+        self._image_widgets:  list = []
+        self._ctk_images:     list = []
+        self._timestamps: dict = {}     # id(text) → time.time() of insert
         self._last_seq: int = ctypes.windll.user32.GetClipboardSequenceNumber()
-        self._suppress_text: str = ""   # text written by copy_item — skip once
+        self._suppress_text: str = ""
         self._build()
         self.app.clipboard.set_callback(self._on_history_change)
-        # Start the polling loop once the widget is mapped
         self.after(_POLL_MS, self._poll)
 
     def _build(self) -> None:
-        tb = ctk.CTkFrame(self, fg_color="transparent", height=50)
-        tb.pack(fill="x", padx=4, pady=(4, 0))
+        tb = ctk.CTkFrame(self, fg_color="transparent", height=58)
+        tb.pack(fill="x", padx=18, pady=(14, 8))
         tb.pack_propagate(False)
 
         ctk.CTkLabel(
             tb, text="Clipboard History",
-            font=ctk.CTkFont(size=14, weight="bold"),
-            text_color=("#99aacc", "#99aacc"),
-        ).pack(side="left", padx=4)
-
-        ctk.CTkButton(
-            tb, text="Clear History", width=110, height=32,
-            fg_color=("#5c1a1a", "#5c1a1a"), hover_color=("#7a2222", "#7a2222"),
-            font=ctk.CTkFont(size=11),
-            command=self._clear,
-        ).pack(side="right", padx=4)
+            font=theme.font(13, "bold"),
+            text_color=theme.TEXT_1, fg_color="transparent",
+        ).pack(side="left")
 
         ctk.CTkLabel(
-            tb,
-            text="Click any entry to copy it back to clipboard",
-            font=ctk.CTkFont(size=11),
-            text_color=("#555577", "#555577"),
-        ).pack(side="left", padx=8)
+            tb, text="Click any entry to copy it back.",
+            font=theme.font(11), text_color=theme.TEXT_3, fg_color="transparent",
+        ).pack(side="left", padx=(12, 0))
 
-        self._scroll = ctk.CTkScrollableFrame(self, fg_color="transparent")
-        self._scroll.pack(fill="both", expand=True, padx=4, pady=(4, 4))
+        DangerButton(tb, text="Clear all", small=True, command=self._clear
+                     ).pack(side="right")
 
-        self._empty = ctk.CTkLabel(
-            self._scroll,
-            text="Clipboard history is empty.\nCopy some text or an image to see it here.",
-            font=ctk.CTkFont(size=14),
-            text_color=("#444466", "#444466"),
-            justify="center",
+        ctk.CTkFrame(self, height=1, fg_color=theme.BORDER_SOFT, corner_radius=0
+                     ).pack(fill="x")
+
+        self._scroll = ctk.CTkScrollableFrame(
+            self, fg_color=theme.BG_BASE,
+            scrollbar_button_color=theme.BG_ELEVATED,
+            scrollbar_button_hover_color=theme.BORDER_STRONG,
         )
+        self._scroll.pack(fill="both", expand=True, padx=10, pady=(8, 8))
+
+        self._empty = ctk.CTkFrame(self._scroll, fg_color="transparent")
+        ctk.CTkLabel(
+            self._empty, text="📋",
+            font=theme.font(28), text_color=theme.TEXT_3, fg_color=theme.BG_ELEVATED,
+            width=56, height=56, corner_radius=14,
+        ).pack(pady=(0, 14))
+        ctk.CTkLabel(
+            self._empty, text="Clipboard is empty",
+            font=theme.font(14, "bold"), text_color=theme.TEXT_1,
+        ).pack()
+        ctk.CTkLabel(
+            self._empty,
+            text="Anything you copy will appear here automatically — text or images.",
+            font=theme.font(12), text_color=theme.TEXT_3, wraplength=320, justify="center",
+        ).pack(pady=(4, 0))
 
         self.refresh()
 
@@ -99,9 +109,8 @@ class ClipboardTab(ctk.CTkFrame):
     def _capture_clipboard(self) -> None:
         user32 = ctypes.windll.user32
 
-        # ── try text first ──
         try:
-            text = self.clipboard_get()   # tkinter — has message queue
+            text = self.clipboard_get()
         except Exception:
             text = None
 
@@ -110,9 +119,9 @@ class ClipboardTab(ctk.CTkFrame):
                 self._suppress_text = ""
             else:
                 self.app.clipboard.add(text)
-            return   # text wins; don't also store as image
+                self._timestamps[text] = time.time()
+            return
 
-        # ── try image ──
         has_image = (
             user32.IsClipboardFormatAvailable(_CF_DIBV5) or
             user32.IsClipboardFormatAvailable(_CF_DIB)
@@ -127,7 +136,6 @@ class ClipboardTab(ctk.CTkFrame):
         if img is None:
             return
 
-        # Keep only the last _MAX_IMAGES unique images (compare by size + mode as a cheap hash)
         sig = (img.size, img.mode, img.tobytes()[:512])
         if any(
             (x.size, x.mode, x.tobytes()[:512]) == sig
@@ -143,22 +151,16 @@ class ClipboardTab(ctk.CTkFrame):
     # ── history display ───────────────────────────────────────────────────────
 
     def _on_history_change(self, _history) -> None:
-        """Callback fired by ClipboardManager.add() — already on main thread."""
         self.refresh()
 
     def refresh(self) -> None:
-        # Destroy previous widgets
         for btn in self._buttons:
-            try:
-                btn.destroy()
-            except Exception:
-                pass
+            try: btn.destroy()
+            except Exception: pass
         self._buttons.clear()
         for row in self._image_widgets:
-            try:
-                row.destroy()
-            except Exception:
-                pass
+            try: row.destroy()
+            except Exception: pass
         self._image_widgets.clear()
         self._ctk_images.clear()
 
@@ -166,80 +168,56 @@ class ClipboardTab(ctk.CTkFrame):
         image_history = self._image_history
 
         if not text_history and not image_history:
-            self._empty.pack(pady=48)
+            self._empty.pack(pady=60)
             return
 
         self._empty.pack_forget()
 
-        # ── images first ──
         for img in image_history:
             self._add_image_row(img)
 
-        # ── text entries ──
-        for i, text in enumerate(text_history):
-            preview = text.replace("\n", " ").replace("\r", "")
-            if len(preview) > 100:
-                preview = preview[:97] + "…"
+        for text in text_history:
+            self._add_text_row(text)
 
-            bg = ("#1a1a2e", "#1a1a2e") if i % 2 == 0 else ("#16162a", "#16162a")
-            btn = ctk.CTkButton(
-                self._scroll,
-                text=f"  {preview}",
-                anchor="w",
-                height=34,
-                fg_color=bg,
-                hover_color=("#252545", "#252545"),
-                text_color=("#d0d0ee", "#d0d0ee"),
-                font=ctk.CTkFont(size=12),
-                command=lambda t=text: self._copy(t),
-            )
-            btn.pack(fill="x", pady=(0, 2))
-            self._buttons.append(btn)
+    def _add_text_row(self, text: str) -> None:
+        item = _ClipItem(self._scroll, kind="text", text=text,
+                         when=self._fmt_when(text),
+                         on_click=lambda t=text: self._copy(t))
+        item.pack(fill="x", pady=(0, 6), padx=2)
+        self._buttons.append(item)
 
     def _add_image_row(self, img) -> None:
-        """Add a thumbnail row for a PIL Image."""
         try:
             from PIL import Image
 
             thumb = img.copy()
             thumb.thumbnail((_THUMB_W, _THUMB_H), Image.LANCZOS)
 
-            ctk_img = ctk.CTkImage(light_image=thumb, dark_image=thumb,
-                                   size=thumb.size)
+            ctk_img = ctk.CTkImage(light_image=thumb, dark_image=thumb, size=thumb.size)
             self._ctk_images.append(ctk_img)
 
-            row = ctk.CTkFrame(self._scroll, fg_color=("#1a1a2e", "#1a1a2e"),
-                               corner_radius=6)
-            row.pack(fill="x", pady=(0, 4))
-            self._image_widgets.append(row)
-
-            lbl = ctk.CTkLabel(row, image=ctk_img, text="")
-            lbl.pack(side="left", padx=8, pady=6)
-
-            info = ctk.CTkLabel(
-                row,
-                text=f"Image  {img.width} × {img.height}",
-                font=ctk.CTkFont(size=11),
-                text_color=("#888899", "#888899"),
+            item = _ClipItem(
+                self._scroll, kind="image",
+                text=f"Screenshot · {img.width} × {img.height}",
+                when="just now",
+                on_click=lambda: self._copy_image(img),
+                image=ctk_img,
+                on_remove=lambda: self._remove_image(img),
             )
-            info.pack(side="left", padx=4)
-
-            ctk.CTkButton(
-                row, text="Copy", width=70, height=26,
-                font=ctk.CTkFont(size=11),
-                fg_color=("#1e3a2a", "#1e3a2a"), hover_color=("#2a5038", "#2a5038"),
-                command=lambda i=img: self._copy_image(i),
-            ).pack(side="right", padx=8, pady=6)
-
-            ctk.CTkButton(
-                row, text="Remove", width=76, height=26,
-                font=ctk.CTkFont(size=11),
-                fg_color=("#3a1616", "#3a1616"), hover_color=("#5c2222", "#5c2222"),
-                command=lambda i=img: self._remove_image(i),
-            ).pack(side="right", padx=(0, 4), pady=6)
-
+            item.pack(fill="x", pady=(0, 6), padx=2)
+            self._image_widgets.append(item)
         except Exception as exc:
             print(f"[HotkeyTool] Clipboard image display error: {exc}")
+
+    def _fmt_when(self, text: str) -> str:
+        ts = self._timestamps.get(text)
+        if ts is None:
+            return ""
+        d = time.time() - ts
+        if d < 60: return "just now"
+        if d < 3600: return f"{int(d / 60)} min ago"
+        if d < 86400: return f"{int(d / 3600)} hr ago"
+        return f"{int(d / 86400)} d ago"
 
     # ── actions ───────────────────────────────────────────────────────────────
 
@@ -250,18 +228,15 @@ class ClipboardTab(ctk.CTkFrame):
         self._suppress_text = text
         self.app.clipboard.add(text)
         if self.app.window:
-            self.app.window.update_status(f"Copied to clipboard: {text[:40]}")
+            self.app.window.toast("Copied to clipboard")
 
     def _copy_image(self, img) -> None:
-        """Copy a PIL Image back to the Windows clipboard."""
         try:
             import io
             from PIL import Image
-            # Write as CF_DIB via Win32
             output = io.BytesIO()
             img.convert("RGB").save(output, format="BMP")
             bmp_data = output.getvalue()
-            # BMP file header is 14 bytes; CF_DIB starts at the info header
             dib_data = bmp_data[14:]
 
             user32   = ctypes.windll.user32
@@ -285,9 +260,7 @@ class ClipboardTab(ctk.CTkFrame):
                 self._last_seq = user32.GetClipboardSequenceNumber()
 
             if self.app.window:
-                self.app.window.update_status(
-                    f"Image copied  ({img.width}×{img.height})"
-                )
+                self.app.window.toast(f"Image copied · {img.width}×{img.height}")
         except Exception as exc:
             print(f"[HotkeyTool] Image copy error: {exc}")
 
@@ -300,3 +273,68 @@ class ClipboardTab(ctk.CTkFrame):
         self._image_history.clear()
         self.app.clipboard.clear_history()
         self.refresh()
+        if self.app.window:
+            self.app.window.toast("History cleared")
+
+
+class _ClipItem(ctk.CTkFrame):
+    """Clip-item row matching design's .clip-item — kind badge + text + when."""
+    def __init__(self, parent, *, kind: str, text: str, when: str,
+                 on_click, image=None, on_remove=None):
+        super().__init__(
+            parent, fg_color=theme.BG_ROW, corner_radius=10,
+            border_color=theme.BORDER_SOFT, border_width=1, height=54,
+        )
+        self.pack_propagate(False)
+        self._on_click = on_click
+
+        if image is not None:
+            ctk.CTkLabel(self, image=image, text="", fg_color="transparent",
+                         ).pack(side="left", padx=10, pady=8)
+
+        # kind badge
+        kind_bg = theme.BG_ELEVATED
+        kind_fg = theme.PURPLE if kind == "image" else theme.TEXT_3
+        ctk.CTkLabel(
+            self, text=kind.upper(),
+            font=theme.font(9, "bold"),
+            fg_color=kind_bg, corner_radius=4,
+            text_color=kind_fg,
+            padx=6, pady=2,
+        ).pack(side="left", padx=(10 if image is None else 4, 8), pady=10)
+
+        # text (truncated)
+        preview = text.replace("\n", " ").replace("\r", "")
+        if len(preview) > 110:
+            preview = preview[:110] + "…"
+        text_label = ctk.CTkLabel(
+            self, text=preview, anchor="w",
+            font=theme.font(12),
+            text_color=theme.TEXT_1, fg_color="transparent",
+        )
+        text_label.pack(side="left", fill="x", expand=True, padx=4, pady=10)
+
+        if when:
+            ctk.CTkLabel(
+                self, text=when,
+                font=theme.font(11),
+                text_color=theme.TEXT_4, fg_color="transparent",
+            ).pack(side="right", padx=(8, 12), pady=10)
+
+        if on_remove:
+            DangerButton(self, text="Remove", small=True, command=on_remove
+                         ).pack(side="right", padx=(0, 8), pady=10)
+
+        # Whole-row click handler
+        for w in (self, text_label):
+            w.bind("<Button-1>", lambda _e: self._invoke())
+            try: w.configure(cursor="hand2")
+            except Exception: pass
+        self.bind("<Enter>", lambda _e: self.configure(fg_color=theme.BG_HOVER, border_color=theme.ACCENT_BORDER))
+        self.bind("<Leave>", lambda _e: self.configure(fg_color=theme.BG_ROW, border_color=theme.BORDER_SOFT))
+
+    def _invoke(self) -> None:
+        try:
+            self._on_click()
+        except Exception:
+            pass

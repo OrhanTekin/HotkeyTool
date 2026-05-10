@@ -9,8 +9,14 @@ _APP_NAME = "HotkeyTool"
 def _launch_command() -> str:
     if getattr(sys, "frozen", False):
         return f'"{sys.executable}" --tray'
+    # pythonw.exe suppresses the console window on Windows
+    exe = sys.executable
+    pythonw = os.path.join(os.path.dirname(exe),
+                           "pythonw.exe" if os.name == "nt" else os.path.basename(exe))
+    if not os.path.isfile(pythonw):
+        pythonw = exe
     script = os.path.abspath(sys.argv[0])
-    return f'"{sys.executable}" "{script}" --tray'
+    return f'"{pythonw}" "{script}" --tray'
 
 
 def is_autostart_enabled() -> bool:

@@ -8,6 +8,10 @@ from typing import TYPE_CHECKING
 
 import customtkinter as ctk
 
+from ui import theme
+from ui.icons import brand_logo, icon as ui_icon
+from ui.widgets import GhostButton, HeaderButton, ListenPill, TabBar, Toast
+
 if TYPE_CHECKING:
     from app import App
 
@@ -25,27 +29,63 @@ if sys.platform == "win32":
     ]
     _GWL_WNDPROC          = -4
     _WM_POWERBROADCAST    = 0x0218
-    _PBT_RESUMESUSPEND    = 7   # user-initiated resume
-    _PBT_RESUMEAUTOMATIC  = 18  # automatic resume (e.g. scheduled wake)
+    _PBT_RESUMESUSPEND    = 7
+    _PBT_RESUMEAUTOMATIC  = 18
 
 
 class MainWindow(ctk.CTk):
     def __init__(self, app: "App") -> None:
-        super().__init__()
+        super().__init__(fg_color=theme.BG_BASE)
         self.app = app
 
         self.title("HotkeyTool")
-        self.geometry("1060x620")
-        self.minsize(860, 520)
+        self.geometry("1100x680")
+        self.minsize(880, 560)
 
-        # Window / taskbar icon — matches the tray icon exactly.
-        # Written to a temp .ico so iconbitmap (native Windows API) can consume it.
-        # Called via after() so it fires after CTk's own async icon setup.
+        # toast first so refresh callbacks during build can use it
+        self._toast = Toast(self)
+
         self.after(50, self._apply_window_icon)
 
         self._build()
         self.protocol("WM_DELETE_WINDOW", self._on_close)
         self.after(200, self._setup_power_hook)
+
+    # ── public API ────────────────────────────────────────────────────────────
+
+    def toast(self, text: str, *, kind: str = "ok") -> None:
+        self._toast.show(text, kind=kind)
+
+    def update_status(self, text: str) -> None:
+        # Used by hotkey trigger callback — overwrite the transient message label
+        self._status_msg.configure(text=text)
+        # auto-clear after 3 s so it doesn't sit forever
+        self.after(3000, lambda: self._status_msg.configure(text=""))
+
+    def refresh_bindings(self) -> None:
+        self._bindings_tab.refresh()
+        self._tab_bar.refresh_counts()
+        self._refresh_statusbar_counts()
+
+    def refresh_schedules(self) -> None:
+        self._schedules_tab.refresh()
+        self._tab_bar.refresh_counts()
+        self._refresh_statusbar_counts()
+
+    def refresh_snippets(self) -> None:
+        if hasattr(self, "_snippets_tab"):
+            self._snippets_tab.refresh()
+        self._tab_bar.refresh_counts()
+        self._refresh_statusbar_counts()
+
+    def refresh_planner(self) -> None:
+        if hasattr(self, "_planner_tab"):
+            self._planner_tab.refresh()
+
+    def update_listening_state(self) -> None:
+        running = self.app.listener.is_running()
+        self._listen_pill.set_listening(running)
+        self._set_status_dot(running)
 
     # ── layout ────────────────────────────────────────────────────────────────
 
@@ -58,103 +98,188 @@ class MainWindow(ctk.CTk):
         from ui.timer_tab     import TimerTab
         from ui.planner_tab   import PlannerTab
 
-        # ── Header bar ──
-        header = ctk.CTkFrame(self, height=56, corner_radius=0,
-                               fg_color=("#0d0d1e", "#0d0d1e"))
+        # ── App header ───────────────────────────────────────────────────────
+        header = ctk.CTkFrame(
+            self, height=60, corner_radius=0, fg_color=theme.BG_SURFACE,
+        )
         header.pack(fill="x", side="top")
         header.pack_propagate(False)
 
+        # brand
+        brand = ctk.CTkFrame(header, fg_color="transparent")
+        brand.pack(side="left", padx=(18, 0), pady=12)
+
+        logo = ctk.CTkLabel(
+            brand, text="", image=brand_logo(30),
+            width=30, height=30, fg_color="transparent",
+        )
+        logo.pack(side="left")
+
+        brand_text = ctk.CTkFrame(brand, fg_color="transparent")
+        brand_text.pack(side="left", padx=(10, 0))
         ctk.CTkLabel(
-            header, text="\u2328  HotkeyTool",
-            font=ctk.CTkFont(size=20, weight="bold"),
-            text_color=("#5b9bd5", "#5b9bd5"),
-        ).pack(side="left", padx=18, pady=12)
+            brand_text, text="HotkeyTool",
+            font=theme.font(14, "bold"),
+            text_color=theme.TEXT_1, anchor="w",
+        ).pack(anchor="w")
 
-        ctk.CTkLabel(
-            header, text="Global hotkey manager & productivity suite",
-            font=ctk.CTkFont(size=11),
-            text_color=("#444466", "#444466"),
-        ).pack(side="left", padx=4)
+        # spacer
+        ctk.CTkFrame(header, fg_color="transparent").pack(side="left", expand=True)
 
-        # Quick-access buttons in header
-        ctk.CTkButton(
-            header, text="Notes", width=72, height=30,
-            font=ctk.CTkFont(size=11),
-            fg_color=("#1e2a3a", "#1e2a3a"), hover_color=("#2a3a4a", "#2a3a4a"),
-            command=lambda: self.app.notes_win.toggle(),
-        ).pack(side="right", padx=(4, 16))
+        # global listening pill
+        self._listen_pill = ListenPill(
+            header,
+            listening=self.app.listener.is_running(),
+            command=self.app.toggle_listening,
+            active_count_getter=lambda: sum(1 for b in self.app.config.bindings if b.enabled),
+        )
+        self._listen_pill.pack(side="left", padx=(0, 12), pady=14)
 
-        ctk.CTkButton(
-            header, text="Stats", width=60, height=30,
-            font=ctk.CTkFont(size=11),
-            fg_color=("#1e2a3a", "#1e2a3a"), hover_color=("#2a3a4a", "#2a3a4a"),
-            command=self.app.toggle_stats_widget,
-        ).pack(side="right", padx=2)
+        # right-side action buttons (design's .icon-btn — transparent + border)
+        actions = ctk.CTkFrame(header, fg_color="transparent")
+        actions.pack(side="right", padx=(0, 16), pady=14)
 
-        # ── Tab view ──
-        self._tabs = ctk.CTkTabview(self, corner_radius=8)
-        self._tabs.pack(fill="both", expand=True, padx=12, pady=(8, 0))
+        HeaderButton(
+            actions, text="Stats", command=self.app.toggle_stats_widget,
+            image=ui_icon("chart", 13, theme.TEXT_2),
+        ).pack(side="right", padx=(6, 0))
 
-        for tab_name in ("Bindings", "Schedules", "Clipboard", "Snippets", "Timer", "Planner", "Settings"):
-            self._tabs.add(tab_name)
+        HeaderButton(
+            actions, text="Notes", command=lambda: self.app.notes_win.toggle(),
+            image=ui_icon("stickynote", 13, theme.TEXT_2),
+        ).pack(side="right")
 
-        self._bindings_tab  = BindingsTab (self._tabs.tab("Bindings"),  self.app)
+        # 1-px header underline (drawn on the window so the tab bar sits under it)
+        ctk.CTkFrame(self, height=1, fg_color=theme.BORDER_SOFT, corner_radius=0
+                     ).pack(side="top", fill="x")
+
+        # ── Tab bar + content stack ─────────────────────────────────────────
+        self._tab_bar = TabBar(self)
+        self._tab_bar.pack(side="top", fill="both", expand=True)
+
+        cfg = self.app.config
+        bindings_page  = self._tab_bar.add("Bindings",  icon="bolt",      count_getter=lambda: len(cfg.bindings))
+        schedules_page = self._tab_bar.add("Schedules", icon="calendar",  count_getter=lambda: len(cfg.schedules))
+        clipboard_page = self._tab_bar.add("Clipboard", icon="clipboard", count_getter=lambda: len(self.app.clipboard.history))
+        snippets_page  = self._tab_bar.add("Snippets",  icon="quote",     count_getter=lambda: len(cfg.snippets))
+        timer_page     = self._tab_bar.add("Timer",     icon="timer")
+        planner_page   = self._tab_bar.add("Planner",   icon="list",      count_getter=lambda: sum(1 for t in cfg.todos if not t.completed))
+        settings_page  = self._tab_bar.add("Settings",  icon="settings")
+
+        self._bindings_tab  = BindingsTab (bindings_page,  self.app)
         self._bindings_tab.pack(fill="both", expand=True)
 
-        self._schedules_tab = SchedulesTab(self._tabs.tab("Schedules"), self.app)
+        self._schedules_tab = SchedulesTab(schedules_page, self.app)
         self._schedules_tab.pack(fill="both", expand=True)
 
-        self._clipboard_tab = ClipboardTab(self._tabs.tab("Clipboard"), self.app)
+        self._clipboard_tab = ClipboardTab(clipboard_page, self.app)
         self._clipboard_tab.pack(fill="both", expand=True)
 
-        self._snippets_tab  = SnippetsTab (self._tabs.tab("Snippets"),  self.app)
+        self._snippets_tab  = SnippetsTab (snippets_page,  self.app)
         self._snippets_tab.pack(fill="both", expand=True)
 
-        self._timer_tab     = TimerTab    (self._tabs.tab("Timer"),     self.app)
+        self._timer_tab     = TimerTab    (timer_page,     self.app)
         self._timer_tab.pack(fill="both", expand=True)
 
-        self._planner_tab   = PlannerTab  (self._tabs.tab("Planner"),   self.app)
+        self._planner_tab   = PlannerTab  (planner_page,   self.app)
         self._planner_tab.pack(fill="both", expand=True)
 
-        self._settings_tab  = SettingsTab (self._tabs.tab("Settings"),  self.app)
+        self._settings_tab  = SettingsTab (settings_page,  self.app)
         self._settings_tab.pack(fill="both", expand=True)
 
-        # ── Status bar ──
-        sb = ctk.CTkFrame(self, height=26, corner_radius=0,
-                          fg_color=("#0a0a18", "#0a0a18"))
+        # ── Status bar ──────────────────────────────────────────────────────
+        sb = ctk.CTkFrame(self, height=28, corner_radius=0,
+                          fg_color=theme.BG_TITLEBAR)
         sb.pack(fill="x", side="bottom")
         sb.pack_propagate(False)
 
-        self._status = ctk.CTkLabel(
-            sb, text="Ready",
-            font=ctk.CTkFont(size=11),
-            text_color=("#555577", "#555577"),
-            anchor="w",
+        # listener dot + label
+        self._status_dot = ctk.CTkLabel(
+            sb, text="●", font=theme.font(10),
+            text_color=theme.SUCCESS, fg_color="transparent",
         )
-        self._status.pack(side="left", padx=14, pady=4)
+        self._status_dot.pack(side="left", padx=(14, 4))
+        self._status_label = ctk.CTkLabel(
+            sb, text="Listener active",
+            font=theme.font(11),
+            text_color=theme.TEXT_2, fg_color="transparent",
+        )
+        self._status_label.pack(side="left")
 
-    # ── public API ────────────────────────────────────────────────────────────
+        ctk.CTkFrame(sb, width=1, height=12, fg_color=theme.BORDER, corner_radius=0
+                     ).pack(side="left", padx=12, pady=8)
 
-    def update_status(self, text: str) -> None:
-        ts = datetime.now().strftime("%H:%M:%S")
-        self._status.configure(text=f"{text}   ({ts})")
+        self._sb_bindings = ctk.CTkLabel(
+            sb, text="0 bindings", font=theme.font(11),
+            text_color=theme.TEXT_3, fg_color="transparent",
+        )
+        self._sb_bindings.pack(side="left")
 
-    def refresh_bindings(self) -> None:
-        self._bindings_tab.refresh()
+        ctk.CTkFrame(sb, width=1, height=12, fg_color=theme.BORDER, corner_radius=0
+                     ).pack(side="left", padx=12, pady=8)
 
-    def refresh_schedules(self) -> None:
-        self._schedules_tab.refresh()
+        self._sb_snippets = ctk.CTkLabel(
+            sb, text="0 snippets", font=theme.font(11),
+            text_color=theme.TEXT_3, fg_color="transparent",
+        )
+        self._sb_snippets.pack(side="left")
 
-    def update_listening_state(self) -> None:
-        self._bindings_tab.update_listening_button()
+        ctk.CTkFrame(sb, width=1, height=12, fg_color=theme.BORDER, corner_radius=0
+                     ).pack(side="left", padx=12, pady=8)
+
+        self._sb_schedules = ctk.CTkLabel(
+            sb, text="0 schedules", font=theme.font(11),
+            text_color=theme.TEXT_3, fg_color="transparent",
+        )
+        self._sb_schedules.pack(side="left")
+
+        # transient hotkey-trigger message
+        self._status_msg = ctk.CTkLabel(
+            sb, text="", font=theme.font(11),
+            text_color=theme.ACCENT, fg_color="transparent",
+        )
+        self._status_msg.pack(side="left", padx=14)
+
+        # right-aligned mono clock
+        self._clock = ctk.CTkLabel(
+            sb, text="--:--:--", font=theme.mono(11),
+            text_color=theme.TEXT_3, fg_color="transparent",
+        )
+        self._clock.pack(side="right", padx=14)
+        self._tick_clock()
+
+        self._refresh_statusbar_counts()
+        self.update_listening_state()
+
+    def _set_status_dot(self, listening: bool) -> None:
+        if listening:
+            self._status_dot.configure(text_color=theme.SUCCESS)
+            self._status_label.configure(text="Listener active", text_color=theme.TEXT_2)
+        else:
+            self._status_dot.configure(text_color=theme.DANGER)
+            self._status_label.configure(text="Listener paused", text_color=theme.TEXT_2)
+
+    def _refresh_statusbar_counts(self) -> None:
+        cfg = self.app.config
+        self._sb_bindings.configure(text=f"{sum(1 for b in cfg.bindings if b.enabled)} bindings")
+        self._sb_snippets.configure(text=f"{sum(1 for s in cfg.snippets if s.enabled)} snippets")
+        self._sb_schedules.configure(text=f"{sum(1 for s in cfg.schedules if s.enabled)} schedules")
+        # also refresh the listening pill's "active" count
+        try:
+            self._listen_pill.set_active_count(sum(1 for b in cfg.bindings if b.enabled))
+        except Exception:
+            pass
+
+    def _tick_clock(self) -> None:
+        try:
+            self._clock.configure(text=datetime.now().strftime("%H:%M:%S"))
+        except Exception:
+            return
+        self.after(1000, self._tick_clock)
+
+    # ── window icon ──────────────────────────────────────────────────────────
 
     def _apply_window_icon(self) -> None:
-        """Set the title-bar / taskbar icon from assets/hotkeytool.ico.
-
-        Uses LoadImageW + WM_SETICON so Windows picks the correct size frame
-        for the current DPI rather than upscaling a small frame.
-        """
-        import ctypes
         from utils.resource_path import resource_path
         try:
             ico_path = resource_path("assets/hotkeytool.ico")
@@ -176,13 +301,12 @@ class MainWindow(ctk.CTk):
                 None, path_str, IMAGE_ICON, big_px, big_px, LR_LOADFROMFILE)
             hsmall = user32.LoadImageW(
                 None, path_str, IMAGE_ICON, small_px, small_px, LR_LOADFROMFILE)
-            user32.SendMessageW(hwnd, WM_SETICON, 1, hbig)    # ICON_BIG
-            user32.SendMessageW(hwnd, WM_SETICON, 0, hsmall)  # ICON_SMALL
+            user32.SendMessageW(hwnd, WM_SETICON, 1, hbig)
+            user32.SendMessageW(hwnd, WM_SETICON, 0, hsmall)
         except Exception:
             pass
 
     def _setup_power_hook(self) -> None:
-        """Subclass the native HWND so we receive WM_POWERBROADCAST."""
         if sys.platform != "win32":
             return
         try:
@@ -193,8 +317,6 @@ class MainWindow(ctk.CTk):
                 if msg == _WM_POWERBROADCAST and wparam in (
                     _PBT_RESUMESUSPEND, _PBT_RESUMEAUTOMATIC
                 ):
-                    # on_system_resume itself schedules the actual restart 3 s
-                    # later, so we just route the wake signal there immediately.
                     self.after(0, app.on_system_resume)
                 return _u32.CallWindowProcW(
                     self._old_wndproc, hwnd, msg, wparam, lparam

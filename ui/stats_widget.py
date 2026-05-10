@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING
 import customtkinter as ctk
 
 from core.stats_monitor import Stats
+from ui import theme
 
 if TYPE_CHECKING:
     from app import App
@@ -34,27 +35,29 @@ class StatsWidget(ctk.CTkToplevel):
 
     def _build(self) -> None:
         outer = ctk.CTkFrame(
-            self, fg_color=("#0d0d1e", "#0d0d1e"),
-            corner_radius=10, border_width=1,
-            border_color=("#2a2a44", "#2a2a44"),
+            self, fg_color=theme.BG_SURFACE,
+            corner_radius=12, border_width=1,
+            border_color=theme.BORDER,
         )
         outer.pack(fill="both", expand=True, padx=1, pady=1)
 
         # Title bar row
-        hdr = ctk.CTkFrame(outer, fg_color=("#131328", "#131328"), corner_radius=8, height=28)
+        hdr = ctk.CTkFrame(outer, fg_color=theme.BG_TITLEBAR,
+                           corner_radius=8, height=28)
         hdr.pack(fill="x", padx=4, pady=(4, 0))
         hdr.pack_propagate(False)
 
         ctk.CTkLabel(
             hdr, text="System Stats",
-            font=ctk.CTkFont(size=11, weight="bold"),
-            text_color=("#6688bb", "#6688bb"),
-        ).pack(side="left", padx=8)
+            font=theme.font(11, "bold"),
+            text_color=theme.ACCENT,
+        ).pack(side="left", padx=10)
 
         ctk.CTkButton(
             hdr, text="✕", width=22, height=22,
-            fg_color="transparent", hover_color=("#5c1a1a", "#5c1a1a"),
-            font=ctk.CTkFont(size=10),
+            fg_color="transparent", hover_color=theme.DANGER_BORDER,
+            font=theme.font(10),
+            text_color=theme.TEXT_2,
             command=self.hide,
         ).pack(side="right", padx=4)
 
@@ -68,17 +71,17 @@ class StatsWidget(ctk.CTkToplevel):
         ]
         for key, label in metrics:
             row = ctk.CTkFrame(outer, fg_color="transparent", height=26)
-            row.pack(fill="x", padx=6, pady=1)
+            row.pack(fill="x", padx=8, pady=1)
             row.pack_propagate(False)
             ctk.CTkLabel(
                 row, text=label, width=60, anchor="w",
-                font=ctk.CTkFont(size=11),
-                text_color=("#888899", "#888899"),
+                font=theme.font(11),
+                text_color=theme.TEXT_3,
             ).pack(side="left")
             val_lbl = ctk.CTkLabel(
                 row, text="—",
-                font=ctk.CTkFont(size=11, weight="bold"),
-                text_color=("#d0d0ee", "#d0d0ee"),
+                font=theme.mono(11, "bold"),
+                text_color=theme.TEXT_1,
                 anchor="w",
             )
             val_lbl.pack(side="left", fill="x", expand=True)
@@ -138,16 +141,16 @@ class StatsWidget(ctk.CTkToplevel):
         )
         self._rows["net"].configure(
             text=f"{_kb_str(stats.net_sent_kb)} / {_kb_str(stats.net_recv_kb)}",
-            text_color=("#d0d0ee", "#d0d0ee"),
+            text_color=theme.TEXT_1,
         )
 
 
-def _color_for_pct(pct: float) -> tuple:
+def _color_for_pct(pct: float) -> str:
     if pct >= 90:
-        return ("#ff5555", "#ff5555")
+        return theme.DANGER
     if pct >= 70:
-        return ("#ffaa55", "#ffaa55")
-    return ("#55dd88", "#55dd88")
+        return theme.WARNING
+    return theme.SUCCESS
 
 
 def _kb_str(kb: float) -> str:

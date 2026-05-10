@@ -12,7 +12,9 @@ import customtkinter as ctk
 from tkinter import messagebox
 
 from core.models import Action, Binding
+from ui import theme
 from ui.action_editor import ActionEditor
+from ui.widgets import GhostButton, PrimaryButton
 
 if TYPE_CHECKING:
     from app import App
@@ -39,6 +41,7 @@ class BindingEditor(ctk.CTkToplevel):
         # Temporarily force topmost so it doesn't spawn behind the main window;
         # relaxed after rendering so it no longer floats above unrelated apps.
         self.attributes("-topmost", True)
+        self.configure(fg_color=theme.BG_SURFACE)
 
         self._build()
 
@@ -57,35 +60,35 @@ class BindingEditor(ctk.CTkToplevel):
         row = ctk.CTkFrame(self, fg_color="transparent")
         row.pack(fill="x", padx=18, pady=(14, 0))
         ctk.CTkLabel(row, text="Name:", width=100, anchor="w",
-                     font=ctk.CTkFont(size=13)).pack(side="left")
+                     font=theme.font(13)).pack(side="left")
         self.name_var = ctk.StringVar(value=self._working.name)
         ctk.CTkEntry(row, textvariable=self.name_var, width=360, height=32,
+                     fg_color=theme.BG_INPUT, border_color=theme.BORDER,
+                     border_width=1, text_color=theme.TEXT_1, font=theme.font(12),
                      placeholder_text="e.g.  Open YouTube + Discord").pack(side="left", padx=4)
 
         # ── Hotkey ──
         row2 = ctk.CTkFrame(self, fg_color="transparent")
         row2.pack(fill="x", padx=18, pady=(8, 0))
         ctk.CTkLabel(row2, text="Hotkey:", width=100, anchor="w",
-                     font=ctk.CTkFont(size=13)).pack(side="left")
+                     font=theme.font(13)).pack(side="left")
         self.hotkey_var = ctk.StringVar(value=self._working.hotkey)
         self.hotkey_entry = ctk.CTkEntry(
             row2, textvariable=self.hotkey_var,
             width=190, height=32,
-            font=ctk.CTkFont(size=13, family="Courier New"),
+            fg_color=theme.BG_INPUT, border_color=theme.BORDER,
+            border_width=1, text_color=theme.TEXT_1, font=theme.mono(12),
             placeholder_text="ctrl+shift+f3",
         )
         self.hotkey_entry.pack(side="left", padx=4)
 
-        self.record_btn = ctk.CTkButton(
-            row2, text="Record Hotkey", width=136, height=32,
-            command=self._record_hotkey,
+        self.record_btn = GhostButton(
+            row2, text="Record Hotkey", command=self._record_hotkey,
         )
         self.record_btn.pack(side="left", padx=4)
 
         self.conflict_label = ctk.CTkLabel(
-            row2, text="",
-            text_color=("#dd4444", "#dd4444"),
-            font=ctk.CTkFont(size=11),
+            row2, text="", text_color=theme.DANGER, font=theme.font(11),
         )
         self.conflict_label.pack(side="left", padx=4)
 
@@ -93,13 +96,16 @@ class BindingEditor(ctk.CTkToplevel):
         ahdr = ctk.CTkFrame(self, fg_color="transparent")
         ahdr.pack(fill="x", padx=18, pady=(14, 0))
         ctk.CTkLabel(ahdr, text="Actions",
-                     font=ctk.CTkFont(size=14, weight="bold")).pack(side="left")
-        ctk.CTkButton(ahdr, text="+ Add Action", width=114, height=28,
+                     font=theme.font(14, "bold"), text_color=theme.TEXT_1).pack(side="left")
+        PrimaryButton(ahdr, text="+ Add Action", small=True,
                       command=self._add_action).pack(side="right")
 
         # ── Actions scroll ──
         self.actions_scroll = ctk.CTkScrollableFrame(
-            self, fg_color=("#0e0e20", "#0e0e20"), corner_radius=8,
+            self, fg_color=theme.BG_BASE,
+            scrollbar_button_color=theme.BG_ELEVATED,
+            scrollbar_button_hover_color=theme.BORDER_STRONG,
+            corner_radius=8, border_color=theme.BORDER_SOFT, border_width=1,
         )
         self.actions_scroll.pack(fill="both", expand=True, padx=18, pady=(6, 0))
         self._rebuild_editors()
@@ -109,17 +115,8 @@ class BindingEditor(ctk.CTkToplevel):
         foot.pack(fill="x", padx=18, pady=(6, 14))
         foot.pack_propagate(False)
 
-        ctk.CTkButton(
-            foot, text="Cancel", width=100, height=36,
-            fg_color=("#252535", "#252535"), hover_color=("#353548", "#353548"),
-            command=self.destroy,
-        ).pack(side="right", padx=(4, 0))
-
-        ctk.CTkButton(
-            foot, text="Save Binding", width=136, height=36,
-            font=ctk.CTkFont(size=13, weight="bold"),
-            command=self._save,
-        ).pack(side="right")
+        GhostButton(foot, text="Cancel", command=self.destroy).pack(side="right", padx=(6, 0))
+        PrimaryButton(foot, text="Save Binding", command=self._save).pack(side="right")
 
     # ── action list management ────────────────────────────────────────────────
 
@@ -132,9 +129,7 @@ class BindingEditor(ctk.CTkToplevel):
             ctk.CTkLabel(
                 self.actions_scroll,
                 text="No actions yet.\nClick '+ Add Action' to add one.",
-                font=ctk.CTkFont(size=13),
-                text_color=("#444460", "#444460"),
-                justify="center",
+                font=theme.font(13), text_color=theme.TEXT_3, justify="center",
             ).pack(pady=24)
             return
 

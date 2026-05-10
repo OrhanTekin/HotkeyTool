@@ -9,86 +9,101 @@ from typing import TYPE_CHECKING
 import customtkinter as ctk
 from tkinter import messagebox
 
+from ui import theme
+from ui.widgets import (
+    DangerButton, GhostButton, IconButton, PrimaryButton, Row, Switch,
+)
+
 if TYPE_CHECKING:
     from app import App
     from core.models import Snippet
 
-_ROW_EVEN = ("#1a1a2e", "#1a1a2e")
-_ROW_ODD  = ("#16162a", "#16162a")
-
 
 class SnippetsTab(ctk.CTkFrame):
     def __init__(self, parent: ctk.CTkBaseClass, app: "App") -> None:
-        super().__init__(parent, fg_color="transparent")
+        super().__init__(parent, fg_color=theme.BG_BASE)
         self.app = app
         self._rows: list[_SnippetRow] = []
         self._build()
         self.refresh()
 
     def _build(self) -> None:
-        tb = ctk.CTkFrame(self, fg_color="transparent", height=50)
-        tb.pack(fill="x", padx=4, pady=(4, 0))
+        tb = ctk.CTkFrame(self, fg_color="transparent", height=58)
+        tb.pack(fill="x", padx=18, pady=(14, 8))
         tb.pack_propagate(False)
 
-        ctk.CTkButton(
-            tb, text="+ Add Snippet",
-            width=140, height=36,
-            font=ctk.CTkFont(size=13, weight="bold"),
-            command=self._add,
-        ).pack(side="left", padx=(0, 8))
+        PrimaryButton(tb, text="+  Add Snippet", command=self._add).pack(side="left")
 
         ctk.CTkLabel(
             tb,
-            text="Type an abbreviation anywhere — it expands automatically",
-            font=ctk.CTkFont(size=11),
-            text_color=("#555577", "#555577"),
-        ).pack(side="left", padx=4)
+            text="Type the abbreviation anywhere — it expands automatically.",
+            font=theme.font(11), text_color=theme.TEXT_3, fg_color="transparent",
+        ).pack(side="left", padx=(12, 0))
 
-        # Column headers
-        hdr = ctk.CTkFrame(self, fg_color=("#0f0f22", "#0f0f22"), height=28, corner_radius=6)
-        hdr.pack(fill="x", padx=4, pady=(6, 0))
-        hdr.pack_propagate(False)
-        for text, width in [("", 44), ("Abbreviation", 150), ("Expansion", 0)]:
-            ctk.CTkLabel(
-                hdr, text=text, width=width, anchor="w",
-                font=ctk.CTkFont(size=11, weight="bold"),
-                text_color=("#666688", "#666688"),
-            ).pack(side="left", padx=(8 if width == 44 else 4, 0))
+        ctk.CTkFrame(self, height=1, fg_color=theme.BORDER_SOFT, corner_radius=0
+                     ).pack(fill="x")
 
-        self._scroll = ctk.CTkScrollableFrame(self, fg_color="transparent")
-        self._scroll.pack(fill="both", expand=True, padx=4, pady=(4, 4))
+        # Column header
+        col_head = ctk.CTkFrame(self, fg_color="transparent", height=24)
+        col_head.pack(fill="x", padx=12, pady=(8, 2))
+        col_head.pack_propagate(False)
 
-        self._empty = ctk.CTkLabel(
-            self._scroll,
-            text='No snippets yet.\nClick "+ Add Snippet" to create one.\nExample: "@@email" → your full email address.',
-            font=ctk.CTkFont(size=13),
-            text_color=("#444466", "#444466"),
-            justify="center",
+        def _ch(text, *, width=None, anchor="center", **pk):
+            kw = {"width": width} if width else {}
+            ctk.CTkLabel(col_head, text=text.upper(),
+                         font=theme.font(10, "bold"), text_color=theme.TEXT_4,
+                         anchor=anchor, fg_color="transparent", **kw).pack(**pk)
+
+        _ch("Actions", side="right", padx=(0, 12))
+        _ch("Active",       width=58,  side="left")
+        _ch("Abbreviation", width=140, side="left", padx=(0, 14))
+        _ch("Expansion", anchor="w", side="left", fill="x", expand=True, padx=(0, 8))
+
+        self._scroll = ctk.CTkScrollableFrame(
+            self, fg_color=theme.BG_BASE,
+            scrollbar_button_color=theme.BG_ELEVATED,
+            scrollbar_button_hover_color=theme.BORDER_STRONG,
         )
+        self._scroll.pack(fill="both", expand=True, padx=10, pady=(8, 8))
+
+        self._empty = ctk.CTkFrame(self._scroll, fg_color="transparent")
+        ctk.CTkLabel(
+            self._empty, text="❝",
+            font=theme.font(28), text_color=theme.TEXT_3, fg_color=theme.BG_ELEVATED,
+            width=56, height=56, corner_radius=14,
+        ).pack(pady=(0, 14))
+        ctk.CTkLabel(
+            self._empty, text="No snippets yet",
+            font=theme.font(14, "bold"), text_color=theme.TEXT_1,
+        ).pack()
+        ctk.CTkLabel(
+            self._empty,
+            text='Example: "@@email" → your full email address.',
+            font=theme.font(12), text_color=theme.TEXT_3, wraplength=320, justify="center",
+        ).pack(pady=(4, 0))
 
     def refresh(self) -> None:
         for row in self._rows:
             row.destroy()
         self._rows.clear()
+        self._empty.pack_forget()
 
         snippets = self.app.config.snippets
         if not snippets:
-            self._empty.pack(pady=48)
+            self._empty.pack(pady=60)
         else:
-            self._empty.pack_forget()
             for i, s in enumerate(snippets):
                 row = _SnippetRow(self._scroll, self.app, s, i, self)
-                row.pack(fill="x", pady=(0, 2))
+                row.pack(fill="x", pady=(0, 6), padx=2)
                 self._rows.append(row)
 
     def _add(self) -> None:
         _SnippetEditor(self, self.app, None)
 
 
-class _SnippetRow(ctk.CTkFrame):
+class _SnippetRow(Row):
     def __init__(self, parent, app: "App", snippet: "Snippet", index: int, tab: SnippetsTab):
-        bg = _ROW_EVEN if index % 2 == 0 else _ROW_ODD
-        super().__init__(parent, fg_color=bg, corner_radius=6, height=44)
+        super().__init__(parent, dim=not snippet.enabled, height=48)
         self.pack_propagate(False)
         self.app = app
         self.snippet = snippet
@@ -96,48 +111,48 @@ class _SnippetRow(ctk.CTkFrame):
         self._build()
 
     def _build(self) -> None:
-        self._sw = ctk.CTkSwitch(self, text="", width=46, height=22)
-        if self.snippet.enabled:
-            self._sw.select()
-        else:
-            self._sw.deselect()
-        self._sw.configure(command=self._toggle)
-        self._sw.pack(side="left", padx=(8, 2))
+        Switch(self, on=self.snippet.enabled, command=self._toggle
+               ).pack(side="left", padx=(14, 12), pady=10)
 
-        # Abbreviation chip
+        # Fixed-width container keeps column aligned with col_head "Abbreviation" (140px)
+        abbr_col = ctk.CTkFrame(self, fg_color="transparent", width=140, height=48)
+        abbr_col.pack(side="left", padx=(0, 14))
+        abbr_col.pack_propagate(False)
         ctk.CTkLabel(
-            self, text=self.snippet.abbreviation,
-            font=ctk.CTkFont(size=12, weight="bold", family="Courier New"),
-            width=140, anchor="center",
-            fg_color=("#1e3a5c", "#1e3a5c"), corner_radius=4,
-            text_color=("#88ccff", "#88ccff"),
-        ).pack(side="left", padx=4, pady=7)
-
-        # Buttons
-        btn = ctk.CTkFrame(self, fg_color="transparent")
-        btn.pack(side="right", padx=6)
-        ctk.CTkButton(btn, text="Delete", width=62, height=28,
-                      fg_color=("#5c1a1a","#5c1a1a"), hover_color=("#7a2222","#7a2222"),
-                      font=ctk.CTkFont(size=11), command=self._delete,
-                      ).pack(side="right", padx=(2, 0))
-        ctk.CTkButton(btn, text="Edit", width=54, height=28,
-                      fg_color=("#1a3028","#1a3028"), hover_color=("#243c32","#243c32"),
-                      font=ctk.CTkFont(size=11), command=self._edit,
-                      ).pack(side="right", padx=2)
+            abbr_col, text=self.snippet.abbreviation,
+            font=theme.mono(11, "bold"),
+            anchor="center",
+            fg_color=theme.ACCENT_BG, corner_radius=6,
+            text_color=theme.ACCENT,
+            padx=10,
+        ).place(relx=0.5, rely=0.5, anchor="center")
 
         # Expansion preview
-        preview = self.snippet.expansion.replace("\n", " ")[:60]
+        preview = self.snippet.expansion.replace("\n", " ")
+        if len(preview) > 80:
+            preview = preview[:80] + "…"
         ctk.CTkLabel(
-            self, text=preview, anchor="w", width=1,
-            font=ctk.CTkFont(size=11),
-            text_color=("#777799", "#777799"),
-        ).pack(side="left", padx=4, fill="x", expand=True)
+            self, text=preview, anchor="w",
+            font=theme.font(12),
+            text_color=theme.TEXT_2 if self.snippet.enabled else theme.TEXT_3,
+            fg_color="transparent",
+        ).pack(side="left", padx=(0, 8), fill="x", expand=True, pady=10)
 
-    def _toggle(self) -> None:
-        self.snippet.enabled = bool(self._sw.get())
+        # Hover-revealed actions
+        actions = ctk.CTkFrame(self, fg_color="transparent")
+        GhostButton(actions, text="Edit", small=True, command=self._edit
+                    ).pack(side="left", padx=2)
+        DangerButton(actions, text="Delete", small=True, command=self._delete
+                     ).pack(side="left", padx=(2, 12))
+        self.set_actions_widget(actions, {"side": "right"})
+
+    def _toggle(self, on: bool) -> None:
+        self.snippet.enabled = on
         self.app.save_config_only()
         self.app.snippets.stop()
         self.app.snippets.start()
+        if self.app.window:
+            self.app.window.toast("Snippet updated")
 
     def _edit(self) -> None:
         _SnippetEditor(self.tab, self.app, self.snippet)
@@ -149,6 +164,8 @@ class _SnippetRow(ctk.CTkFrame):
             pass
         self.app.save_config_only()
         self.tab.refresh()
+        if self.app.window:
+            self.app.window.toast("Snippet deleted")
 
 
 class _SnippetEditor(ctk.CTkToplevel):
@@ -160,9 +177,10 @@ class _SnippetEditor(ctk.CTkToplevel):
         self._working = Sn.new() if snippet is None else copy.deepcopy(snippet)
 
         self.title("New Snippet" if snippet is None else "Edit Snippet")
-        self.geometry("500x280")
+        self.geometry("500x300")
         self.resizable(False, False)
         self.attributes("-topmost", True)
+        self.configure(fg_color=theme.BG_SURFACE)
         self._build()
         self.after(120, self.grab_set)
         self.after(300, lambda: self.attributes("-topmost", False))
@@ -175,36 +193,36 @@ class _SnippetEditor(ctk.CTkToplevel):
         r1 = ctk.CTkFrame(self, fg_color="transparent")
         r1.pack(fill="x", **pad)
         ctk.CTkLabel(r1, text="Abbreviation:", width=110, anchor="w",
-                     font=ctk.CTkFont(size=13)).pack(side="left")
+                     font=theme.font(13), text_color=theme.TEXT_1).pack(side="left")
         self._abbr_var = ctk.StringVar(value=self._working.abbreviation)
-        ctk.CTkEntry(r1, textvariable=self._abbr_var, width=300, height=30,
-                     font=ctk.CTkFont(size=13, family="Courier New"),
+        ctk.CTkEntry(r1, textvariable=self._abbr_var, width=300, height=32,
+                     fg_color=theme.BG_INPUT, border_color=theme.BORDER, border_width=1,
+                     text_color=theme.TEXT_1, font=theme.mono(12),
                      placeholder_text="e.g.  @@email").pack(side="left", padx=4)
 
         r2 = ctk.CTkFrame(self, fg_color="transparent")
         r2.pack(fill="x", **pad)
         ctk.CTkLabel(r2, text="Expansion:", width=110, anchor="nw",
-                     font=ctk.CTkFont(size=13)).pack(side="left", anchor="n")
-        self._exp_box = ctk.CTkTextbox(r2, width=300, height=100,
-                                       font=ctk.CTkFont(size=12))
+                     font=theme.font(13), text_color=theme.TEXT_1).pack(side="left", anchor="n")
+        self._exp_box = ctk.CTkTextbox(
+            r2, width=300, height=100, font=theme.font(12),
+            fg_color=theme.BG_INPUT, border_color=theme.BORDER, border_width=1,
+            text_color=theme.TEXT_1,
+        )
         self._exp_box.pack(side="left", padx=4)
         self._exp_box.insert("1.0", self._working.expansion)
 
         ctk.CTkLabel(
             self,
             text="Tip: the abbreviation is replaced as you type it in any app.",
-            font=ctk.CTkFont(size=10), text_color=("#555577", "#555577"),
+            font=theme.font(10), text_color=theme.TEXT_3,
         ).pack(padx=20, pady=(6, 0), anchor="w")
 
         foot = ctk.CTkFrame(self, fg_color="transparent", height=50)
         foot.pack(fill="x", padx=20, pady=(8, 12), side="bottom")
         foot.pack_propagate(False)
-        ctk.CTkButton(foot, text="Cancel", width=90, height=34,
-                      fg_color=("#252535","#252535"), hover_color=("#353548","#353548"),
-                      command=self.destroy).pack(side="right", padx=(4, 0))
-        ctk.CTkButton(foot, text="Save Snippet", width=120, height=34,
-                      font=ctk.CTkFont(size=13, weight="bold"),
-                      command=self._save).pack(side="right")
+        GhostButton(foot, text="Cancel", command=self.destroy).pack(side="right", padx=(6, 0))
+        PrimaryButton(foot, text="Save Snippet", command=self._save).pack(side="right")
 
     def _save(self) -> None:
         abbr = self._abbr_var.get().strip()

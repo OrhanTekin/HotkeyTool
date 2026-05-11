@@ -451,6 +451,7 @@ class Row(ctk.CTkFrame):
         self._hovered = False
         self._reveal_cb = None
         self._hover_widgets: set = set()
+        self._watchdog_id: str | None = None
         self.bind("<Enter>", self._on_enter, add="+")
         self.bind("<Leave>", self._on_leave, add="+")
         # Defer descendant binding until after the subclass finishes _build().
@@ -509,6 +510,12 @@ class Row(ctk.CTkFrame):
             except Exception:
                 pass
         self._notify_bg_change()
+        # Watchdog: Tk occasionally drops <Leave> events (fast pointer move,
+        # another window appearing over the pointer, modal dialog stealing
+        # focus, …) which would leave the row stuck in the hovered state.
+        # Poll every 250 ms while hovered and force-clear if the pointer is
+        # not actually inside the row anymore.
+        self._start_watchdog()
 
     def _on_leave(self, _evt=None) -> None:
         if not self._hovered:
@@ -522,8 +529,43 @@ class Row(ctk.CTkFrame):
             return
         if self._pointer_in_row():
             return
+        self._do_leave()
+
+    def _start_watchdog(self) -> None:
+        if self._watchdog_id is not None:
+            return
+        try:
+            self._watchdog_id = self.after(250, self._watchdog_tick)
+        except Exception:
+            self._watchdog_id = None
+
+    def _watchdog_tick(self) -> None:
+        self._watchdog_id = None
+        if not self._hovered:
+            return
+        try:
+            if not self.winfo_exists():
+                return
+        except Exception:
+            return
+        if not self._pointer_in_row():
+            # Pointer is gone but we never received <Leave> — force-clear.
+            self._do_leave()
+            return
+        self._start_watchdog()
+
+    def _do_leave(self) -> None:
         self._hovered = False
-        self.configure(fg_color=theme.BG_ROW, border_color=theme.BORDER_SOFT)
+        if self._watchdog_id is not None:
+            try:
+                self.after_cancel(self._watchdog_id)
+            except Exception:
+                pass
+            self._watchdog_id = None
+        try:
+            self.configure(fg_color=theme.BG_ROW, border_color=theme.BORDER_SOFT)
+        except Exception:
+            pass
         if hasattr(self, "_actions"):
             try:
                 self._actions.pack_forget()

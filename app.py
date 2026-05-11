@@ -55,6 +55,7 @@ class App:
         register_app_callback("show_transform_picker", self._cb_show_transform_picker)
         register_app_callback("get_gemini_key",        lambda: self.config.settings.gemini_api_key)
         register_app_callback("gemini_ask",            self._cb_gemini_ask)
+        register_app_callback("show_api_key_missing",  self._cb_show_api_key_missing)
 
     # ── lifecycle ─────────────────────────────────────────────────────────────
 
@@ -209,6 +210,12 @@ class App:
         from ui.gemini_ask_window import GeminiAskWindow
         GeminiAskWindow(self)
 
+    def _cb_show_api_key_missing(self) -> None:
+        """Open the themed 'Gemini API key required' popup on the UI thread.
+        Safe to invoke from action_runner's daemon thread."""
+        from ui.transform_picker import show_api_key_missing
+        show_api_key_missing(self)
+
     # ── stats widget ──────────────────────────────────────────────────────────
 
     def toggle_stats_widget(self) -> None:
@@ -225,19 +232,10 @@ class App:
     # ── sleep / wake recovery ─────────────────────────────────────────────────
 
     def on_system_resume(self) -> None:
-        """Schedule multiple keyboard-listener restart attempts after wake.
+        """Schedule keyboard-listener restart attempts after wake.
 
-        Modifying the existing keyboard library listener (setting listening=False
-        + start_if_necessary) was unreliable — observed in the field that hotkeys
-        stayed dead minutes after wake.  The robust fix is to REPLACE
-        keyboard._listener with a brand-new instance, which guarantees:
-          • all internal containers start fresh
-          • a new listening thread is spawned
-          • that thread calls prepare_intercept() → SetWindowsHookEx() with a
-            new handle (the OS-level hook is re-installed)
-
-        Multiple staggered attempts (3 s, 7 s, 15 s, 30 s) cover the case where
-        Windows' input subsystem isn't fully ready immediately after wake.
+        Replaces keyboard._listener with a brand-new instance so the listening
+        thread is respawned and SetWindowsHookEx() runs with a fresh handle.
         """
         now = time.monotonic()
         if now - getattr(self, "_last_resume_t", 0.0) < 5:
@@ -252,49 +250,54 @@ class App:
     def _do_resume_restart(self) -> None:
         """Replace keyboard._listener with a fresh instance and re-register.
 
-        Each call is a complete reset — safe to invoke multiple times.  The
-        OLD listener instance is orphaned (its threads stay alive but no longer
-        match any callbacks since we replace the global reference) and gets
-        GC'd whenever Python decides to.
+        Safe to call multiple times (staggered attempts after wake).
+
+        The old code used self.listener.is_running() for was_listening.
+        The 3 s attempt calls listener.stop() → _running=False, so every
+        later attempt (7 s, 15 s, 30 s) saw was_listening=False and silently
+        skipped re-registration.  If 3 s failed because Windows wasn't ready
+        yet, hotkeys were never restored.  Fix: use self.config.listening
+        (user's saved intent) which is never touched by runtime stop/start.
         """
         import keyboard
 
-        was_listening = self.listener.is_running()
+        # User's saved intent — never modified by runtime stop/start.
+        should_listen = self.config.listening
 
-        # 1. Stop our wrappers (so they don't double-register against the new listener)
+        # 1. Tear down both wrappers unconditionally (safe if already stopped).
         try:
             self.snippets.stop()
         except Exception:
             pass
         try:
-            if was_listening:
-                self.listener.stop()
+            self.listener.stop()
         except Exception:
             pass
 
-        # 2. Replace keyboard._listener entirely with a fresh instance.
-        #    add_hotkey/hook in the keyboard module read _listener via the
-        #    module's namespace at call time, so they pick up the replacement.
+        # 2. Replace keyboard._listener with a completely fresh instance.
+        #    After sleep/wake the WH_KEYBOARD_LL hook handle is invalidated by
+        #    Windows but the library thread stays alive, so start_if_necessary()
+        #    is a no-op (sees listening=True and returns immediately).
+        #    A brand-new instance starts with listening=False, so the first
+        #    add_hotkey() call triggers start_if_necessary() → new thread →
+        #    fresh SetWindowsHookEx().
         try:
-            old = keyboard._listener
-            new_listener = type(old)()
-            keyboard._listener = new_listener
-            new_listener.start_if_necessary()   # new thread + fresh SetWindowsHookEx
+            keyboard._listener = type(keyboard._listener)()
         except Exception as exc:
-            print(f"[HotkeyTool] resume: listener replace error: {exc}")
+            print(f"[HotkeyTool] resume: listener replace: {exc}")
 
-        # 3. Re-register everything against the fresh listener
+        # 3. Re-register everything against the fresh listener.
         try:
-            if was_listening:
+            if should_listen:
                 self.listener.start()
         except Exception as exc:
-            print(f"[HotkeyTool] resume: listener.start error: {exc}")
+            print(f"[HotkeyTool] resume: listener.start: {exc}")
         try:
             self.snippets.start()
         except Exception as exc:
-            print(f"[HotkeyTool] resume: snippets.start error: {exc}")
+            print(f"[HotkeyTool] resume: snippets.start: {exc}")
 
-        # 4. Reset notes window so the next open gets full focus retries
+        # 4. Reset notes window focus state.
         if self.notes_win:
             self.notes_win._first_show = True
 

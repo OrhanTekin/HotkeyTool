@@ -50,13 +50,18 @@ class SnippetsTab(ctk.CTkFrame):
 
         def _ch(text, *, width=None, anchor="center", **pk):
             kw = {"width": width} if width else {}
-            ctk.CTkLabel(col_head, text=text.upper(),
-                         font=theme.font(10, "bold"), text_color=theme.TEXT_4,
-                         anchor=anchor, fg_color="transparent", **kw).pack(**pk)
+            lbl = ctk.CTkLabel(col_head, text=text.upper(),
+                               font=theme.font(10, "bold"), text_color=theme.TEXT_4,
+                               anchor=anchor, fg_color="transparent", **kw)
+            lbl.pack(**pk)
+            return lbl
 
         _ch("Actions", side="right", padx=(0, 12))
-        _ch("Active",       width=58,  side="left")
-        _ch("Abbreviation", width=140, side="left", padx=(0, 14))
+        _ch("Active", width=58, side="left")
+        # Abbreviation header — left-aligned and width recomputed in refresh()
+        # so it matches the widest abbreviation chip in the list.
+        self._abbr_header = _ch("Abbreviation", width=140, anchor="w",
+                                side="left", padx=(0, 14))
         _ch("Expansion", anchor="w", side="left", fill="x", expand=True, padx=(0, 8))
 
         self._scroll = ctk.CTkScrollableFrame(
@@ -89,43 +94,92 @@ class SnippetsTab(ctk.CTkFrame):
         self._empty.pack_forget()
 
         snippets = self.app.config.snippets
+        col_w = self._calc_abbr_col_width(snippets)
+        self._abbr_header.configure(width=col_w)
+
         if not snippets:
             self._empty.pack(pady=60)
         else:
             for i, s in enumerate(snippets):
-                row = _SnippetRow(self._scroll, self.app, s, i, self)
+                row = _SnippetRow(self._scroll, self.app, s, i, self, col_w)
                 row.pack(fill="x", pady=(0, 6), padx=2)
                 self._rows.append(row)
+
+    def _calc_abbr_col_width(self, snippets) -> int:
+        """Return the pixel width needed so the abbreviation column fits the
+        longest chip (first abbreviation + optional `+N` badge), with a
+        minimum that keeps the header readable."""
+        from tkinter.font import Font
+        chip_f   = Font(family=theme.mono_family(),  size=11, weight="bold")
+        badge_f  = Font(family=theme.mono_family(),  size=10, weight="bold")
+        header_f = Font(family=theme.font_family(),  size=10, weight="bold")
+
+        # Minimum: header text + a little breathing room.
+        w = header_f.measure("ABBREVIATION") + 12
+        for s in snippets:
+            abbrs = [a for a in s.abbreviations if a]
+            if not abbrs:
+                continue
+            first, extras = abbrs[0], len(abbrs) - 1
+            # Chip: text + CTkLabel padx (10 each side).
+            chip_w = chip_f.measure(first) + 20
+            if extras > 0:
+                # 4 px gap + badge padx (6 each side) + badge text.
+                chip_w += 4 + badge_f.measure(f"+{extras}") + 12
+            w = max(w, chip_w)
+        return w
 
     def _add(self) -> None:
         _SnippetEditor(self, self.app, None)
 
 
 class _SnippetRow(Row):
-    def __init__(self, parent, app: "App", snippet: "Snippet", index: int, tab: SnippetsTab):
+    def __init__(self, parent, app: "App", snippet: "Snippet", index: int,
+                 tab: SnippetsTab, abbr_col_w: int):
         super().__init__(parent, dim=not snippet.enabled, height=48)
         self.pack_propagate(False)
         self.app = app
         self.snippet = snippet
         self.tab = tab
+        self._abbr_col_w = abbr_col_w
         self._build()
 
     def _build(self) -> None:
         Switch(self, on=self.snippet.enabled, command=self._toggle
                ).pack(side="left", padx=(14, 12), pady=10)
 
-        # Fixed-width container keeps column aligned with col_head "Abbreviation" (140px)
-        abbr_col = ctk.CTkFrame(self, fg_color="transparent", width=140, height=48)
+        # Abbreviation column — width matches the col_head label so chip and
+        # header are left-aligned to the same x.
+        abbr_col = ctk.CTkFrame(self, fg_color="transparent",
+                                width=self._abbr_col_w, height=48)
         abbr_col.pack(side="left", padx=(0, 14))
         abbr_col.pack_propagate(False)
+
+        abbrs = [a for a in self.snippet.abbreviations if a]
+        if not abbrs:
+            # Defensive: render an empty placeholder chip
+            abbrs = [""]
+        first, extra = abbrs[0], len(abbrs) - 1
+        # Left-aligned, vertically centered within the column.
+        inner = ctk.CTkFrame(abbr_col, fg_color="transparent")
+        inner.place(relx=0.0, rely=0.5, anchor="w")
         ctk.CTkLabel(
-            abbr_col, text=self.snippet.abbreviation,
+            inner, text=first,
             font=theme.mono(11, "bold"),
             anchor="center",
             fg_color=theme.ACCENT_BG, corner_radius=6,
             text_color=theme.ACCENT,
             padx=10,
-        ).place(relx=0.5, rely=0.5, anchor="center")
+        ).pack(side="left")
+        if extra > 0:
+            ctk.CTkLabel(
+                inner, text=f"+{extra}",
+                font=theme.mono(10, "bold"),
+                anchor="center",
+                fg_color=theme.BG_ELEVATED, corner_radius=6,
+                text_color=theme.TEXT_2,
+                padx=6,
+            ).pack(side="left", padx=(4, 0))
 
         # Expansion preview
         preview = self.snippet.expansion.replace("\n", " ")
@@ -177,13 +231,15 @@ class _SnippetEditor(ctk.CTkToplevel):
         self._working = Sn.new() if snippet is None else copy.deepcopy(snippet)
 
         self.title("New Snippet" if snippet is None else "Edit Snippet")
-        self.geometry("500x300")
+        self.geometry("520x420")
         self.resizable(False, False)
         self.attributes("-topmost", True)
         self.configure(fg_color=theme.BG_SURFACE)
         self._build()
         self.after(120, self.grab_set)
         self.after(300, lambda: self.attributes("-topmost", False))
+        from utils.resource_path import apply_window_icon
+        self.after(200, lambda: apply_window_icon(self))
         self.lift()
         self.focus_force()
 
@@ -192,20 +248,29 @@ class _SnippetEditor(ctk.CTkToplevel):
 
         r1 = ctk.CTkFrame(self, fg_color="transparent")
         r1.pack(fill="x", **pad)
-        ctk.CTkLabel(r1, text="Abbreviation:", width=110, anchor="w",
-                     font=theme.font(13), text_color=theme.TEXT_1).pack(side="left")
-        self._abbr_var = ctk.StringVar(value=self._working.abbreviation)
-        ctk.CTkEntry(r1, textvariable=self._abbr_var, width=300, height=32,
-                     fg_color=theme.BG_INPUT, border_color=theme.BORDER, border_width=1,
-                     text_color=theme.TEXT_1, font=theme.mono(12),
-                     placeholder_text="e.g.  @@email").pack(side="left", padx=4)
+        ctk.CTkLabel(r1, text="Abbreviations:", width=110, anchor="nw",
+                     font=theme.font(13), text_color=theme.TEXT_1
+                     ).pack(side="left", anchor="n")
+        self._abbr_box = ctk.CTkTextbox(
+            r1, width=300, height=90, font=theme.mono(12),
+            fg_color=theme.BG_INPUT, border_color=theme.BORDER, border_width=1,
+            text_color=theme.TEXT_1,
+        )
+        self._abbr_box.pack(side="left", padx=4)
+        self._abbr_box.insert("1.0", "\n".join(self._working.abbreviations))
+
+        ctk.CTkLabel(
+            self,
+            text="One per line — any of them will expand to the text below.",
+            font=theme.font(10), text_color=theme.TEXT_3,
+        ).pack(padx=20, pady=(4, 0), anchor="w")
 
         r2 = ctk.CTkFrame(self, fg_color="transparent")
         r2.pack(fill="x", **pad)
         ctk.CTkLabel(r2, text="Expansion:", width=110, anchor="nw",
                      font=theme.font(13), text_color=theme.TEXT_1).pack(side="left", anchor="n")
         self._exp_box = ctk.CTkTextbox(
-            r2, width=300, height=100, font=theme.font(12),
+            r2, width=300, height=110, font=theme.font(12),
             fg_color=theme.BG_INPUT, border_color=theme.BORDER, border_width=1,
             text_color=theme.TEXT_1,
         )
@@ -214,7 +279,7 @@ class _SnippetEditor(ctk.CTkToplevel):
 
         ctk.CTkLabel(
             self,
-            text="Tip: the abbreviation is replaced as you type it in any app.",
+            text="Tip: any abbreviation is replaced as you type it in any app.",
             font=theme.font(10), text_color=theme.TEXT_3,
         ).pack(padx=20, pady=(6, 0), anchor="w")
 
@@ -225,17 +290,27 @@ class _SnippetEditor(ctk.CTkToplevel):
         PrimaryButton(foot, text="Save Snippet", command=self._save).pack(side="right")
 
     def _save(self) -> None:
-        abbr = self._abbr_var.get().strip()
-        exp  = self._exp_box.get("1.0", "end-1c")
-        if not abbr:
-            messagebox.showwarning("Validation", "Please enter an abbreviation.", parent=self)
+        # Parse abbreviations: one per line, strip whitespace, drop blanks/duplicates.
+        raw = self._abbr_box.get("1.0", "end-1c")
+        seen: set[str] = set()
+        abbrs: list[str] = []
+        for line in raw.splitlines():
+            s = line.strip()
+            if s and s not in seen:
+                seen.add(s)
+                abbrs.append(s)
+        exp = self._exp_box.get("1.0", "end-1c")
+        if not abbrs:
+            messagebox.showwarning("Validation",
+                                   "Please enter at least one abbreviation.",
+                                   parent=self)
             return
         if not exp:
             messagebox.showwarning("Validation", "Please enter the expansion text.", parent=self)
             return
 
-        self._working.abbreviation = abbr
-        self._working.expansion    = exp
+        self._working.abbreviations = abbrs
+        self._working.expansion     = exp
 
         if self._original is None:
             self.app.config.snippets.append(self._working)

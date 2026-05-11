@@ -49,76 +49,49 @@ _MATCH_CUR    = "match_cur"
 _FONTS = ["Consolas", "Cascadia Code", "Courier New", "Lucida Console"]
 
 
-def _mk_colors(mode: str) -> dict:
-    """Return a theme-appropriate color palette."""
-    if mode != "Light":
-        return {
-            "bg":          "#0d0d1e",
-            "fg":          "#d8d8f8",
-            "gutter_bg":   "#0a0a16",
-            "gutter_fg":   "#3a3a5a",
-            "cursor":      "#7799cc",
-            "sel_bg":      "#1e3a6e",
-            "toolbar_bg":  "#0f0f22",
-            "bar_bg":      "#080816",
-            "btn_bg":      "#1e2a3a",
-            "btn_fg":      "#c0c0e0",
-            "btn_abg":     "#2a3a4a",
-            "btn_afg":     "#ffffff",
-            "add_bg":      "#163a22",
-            "del_bg":      "#5c1a1a",
-            "wrap_on_bg":  "#1e3a2a",
-            "wrap_on_fg":  "#aaddaa",
-            "wrap_off_bg": "#3a2020",
-            "wrap_off_fg": "#ddaaaa",
-            "border":      "#1e1e38",
-            "match_bg":    "#3a3a1a",
-            "match_fg":    "#ffdd88",
-            "mcur_bg":     "#7a6020",
-            "mcur_fg":     "#ffffff",
-            "lbl_fg":      "#9999bb",
-            "ent_bg":      "#141428",
-            "ent_hi":      "#2a2a4a",
-            "ent_hia":     "#4a4a8a",
-            "cnt_fg":      "#557799",
-            "close_bg":    "#3a1616",
-            "status_fg":   "#444466",
-            "saved_fg":    "#997755",
-        }
-    else:
-        return {
-            "bg":          "#f5f5fa",
-            "fg":          "#1a1a2e",
-            "gutter_bg":   "#e8e8f0",
-            "gutter_fg":   "#888899",
-            "cursor":      "#3366cc",
-            "sel_bg":      "#b0c8f0",
-            "toolbar_bg":  "#dde0ea",
-            "bar_bg":      "#e8eaf0",
-            "btn_bg":      "#c8d0e0",
-            "btn_fg":      "#1a1a3a",
-            "btn_abg":     "#b0b8cc",
-            "btn_afg":     "#000000",
-            "add_bg":      "#b0d8ba",
-            "del_bg":      "#e8b0b0",
-            "wrap_on_bg":  "#b0d8ba",
-            "wrap_on_fg":  "#1a5a2a",
-            "wrap_off_bg": "#e8b0b0",
-            "wrap_off_fg": "#7a2020",
-            "border":      "#c0c0d8",
-            "match_bg":    "#f0e060",
-            "match_fg":    "#3a3000",
-            "mcur_bg":     "#d09010",
-            "mcur_fg":     "#000000",
-            "lbl_fg":      "#444466",
-            "ent_bg":      "#ffffff",
-            "ent_hi":      "#b0b8cc",
-            "ent_hia":     "#4477aa",
-            "cnt_fg":      "#336699",
-            "close_bg":    "#e8b0b0",
-            "status_fg":   "#555577",
-            "saved_fg":    "#aa7733",
-        }
+def _mk_colors() -> dict:
+    """Pull a Notes-specific palette from the global theme tokens.
+
+    Keeping the dict-of-named-colors API so the rest of this file doesn't
+    have to change.  All values now come from ui.theme — no more hardcoded
+    hex from the old design.
+    """
+    from ui import theme as _t
+    return {
+        "bg":          _t.BG_BASE,        # window root
+        "editor_bg":   _t.BG_SURFACE,     # text body — slightly less dark, same level
+                                          # as the toolbar so it reads as one surface
+        "fg":          _t.TEXT_1,
+        "gutter_bg":   _t.BG_INPUT,       # gutter darker than editor, subtle contrast
+        "gutter_fg":   _t.TEXT_4,
+        "cursor":      _t.ACCENT,
+        "sel_bg":      _t.ACCENT_BG_2,
+        "toolbar_bg":  _t.BG_SURFACE,
+        "bar_bg":      _t.BG_SURFACE,
+        "btn_bg":      _t.BG_ELEVATED,
+        "btn_fg":      _t.TEXT_1,
+        "btn_abg":     _t.BG_HOVER,
+        "btn_afg":     _t.TEXT_1,
+        "add_bg":      _t.SUCCESS_BG,
+        "del_bg":      _t.DANGER_BG,
+        "wrap_on_bg":  _t.SUCCESS_BG,
+        "wrap_on_fg":  _t.SUCCESS,
+        "wrap_off_bg": _t.DANGER_BG,
+        "wrap_off_fg": _t.DANGER,
+        "border":      _t.BORDER_SOFT,
+        "match_bg":    _t.WARNING_BG,
+        "match_fg":    _t.WARNING,
+        "mcur_bg":     _t.ACCENT_DEEP,
+        "mcur_fg":     _t.TEXT_1,
+        "lbl_fg":      _t.TEXT_2,
+        "ent_bg":      _t.BG_INPUT,
+        "ent_hi":      _t.BORDER,
+        "ent_hia":     _t.ACCENT_MID,
+        "cnt_fg":      _t.ACCENT,
+        "close_bg":    _t.DANGER_BG,
+        "status_fg":   _t.TEXT_3,
+        "saved_fg":    _t.WARNING,
+    }
 
 
 class NotesWindow(ctk.CTkToplevel):
@@ -145,7 +118,8 @@ class NotesWindow(ctk.CTkToplevel):
 
         self.protocol("WM_DELETE_WINDOW", self.hide)
         self.bind("<Configure>", self._on_configure)
-        self._C = _mk_colors(ctk.get_appearance_mode())
+        self._C = _mk_colors()
+        self.configure(fg_color=self._C["bg"])
         self._build()
         self._reload_notes()
         self.withdraw()
@@ -172,121 +146,166 @@ class NotesWindow(ctk.CTkToplevel):
     # ── layout ────────────────────────────────────────────────────────────────
 
     def _build(self) -> None:
-        C = self._C
+        C    = self._C
+        from ui import theme as _t
+        from ui.widgets import DangerButton, GhostButton, PrimaryButton, SuccessButton
 
-        # ── Toolbar ──
-        tb = tk.Frame(self, bg=C["toolbar_bg"], height=44)
-        tb.pack(fill="x", side="top")
-        tb.pack_propagate(False)
-        self._tb = tb
+        # ── Header (matches main window's header pattern) ────────────────────
+        header = ctk.CTkFrame(self, fg_color=_t.BG_SURFACE,
+                              corner_radius=0, height=60)
+        header.pack(fill="x", side="top")
+        header.pack_propagate(False)
+        self._tb = header
 
-        def _tb_btn(parent, text, cmd, bg=C["btn_bg"], width=6, fg=C["btn_fg"]):
-            return tk.Button(parent, text=text, command=cmd,
-                             bg=bg, fg=fg, activebackground=C["btn_abg"],
-                             activeforeground=C["btn_afg"], relief="flat",
-                             font=("Segoe UI", 10), width=width, cursor="hand2")
+        # Brand cluster on the left: title + note dropdown + note CRUD buttons
+        left = ctk.CTkFrame(header, fg_color="transparent")
+        left.pack(side="left", padx=(18, 0), pady=14)
 
-        _tb_btn(tb, "+", self._new_note, bg=C["add_bg"], width=3).pack(
-            side="left", padx=(6, 2), pady=8)
+        ctk.CTkLabel(
+            left, text="Quick Notes",
+            font=_t.font(14, "bold"), text_color=_t.TEXT_1,
+            fg_color="transparent",
+        ).pack(side="left", padx=(0, 14))
+
+        # Vertical separator
+        ctk.CTkFrame(left, width=1, height=24, fg_color=_t.BORDER,
+                     corner_radius=0).pack(side="left", padx=(0, 12))
 
         self._note_var  = ctk.StringVar()
         self._note_menu = ctk.CTkOptionMenu(
-            tb, variable=self._note_var, values=["(none)"],
-            command=self._on_note_selected, width=180, height=28,
+            left, variable=self._note_var, values=["(none)"],
+            command=self._on_note_selected, width=220, height=32,
+            corner_radius=_t.RADIUS_SM,
+            font=_t.font(12), text_color=_t.TEXT_1,
+            fg_color=_t.BG_ELEVATED, button_color=_t.BG_HOVER,
+            button_hover_color=_t.BORDER_STRONG,
+            dropdown_fg_color=_t.BG_ELEVATED,
+            dropdown_text_color=_t.TEXT_1,
+            dropdown_hover_color=_t.BG_HOVER,
+            dropdown_font=_t.font(12),
         )
-        self._note_menu.pack(side="left", padx=4, pady=8)
+        self._note_menu.pack(side="left", padx=(0, 8))
 
-        _tb_btn(tb, "Rename", self._rename_note, width=8).pack(side="left", padx=2)
-        _tb_btn(tb, "Delete", self._delete_note, bg=C["del_bg"], width=7).pack(side="left", padx=2)
+        PrimaryButton(left, text="+  New", small=True,
+                      command=self._new_note).pack(side="left", padx=2)
+        GhostButton(left, text="Rename", small=True,
+                    command=self._rename_note).pack(side="left", padx=2)
+        DangerButton(left, text="Delete", small=True,
+                     command=self._delete_note).pack(side="left", padx=2)
 
-        # Right-side toolbar buttons
-        _tb_btn(tb, "⚙", self._open_options, width=3).pack(side="right", padx=(2, 14), pady=8)
-        _tb_btn(tb, "A+", self._zoom_in,   width=3).pack(side="right", padx=2)
-        _tb_btn(tb, "A−", self._zoom_out,  width=3).pack(side="right", padx=2)
+        # Right-side action cluster
+        actions = ctk.CTkFrame(header, fg_color="transparent")
+        actions.pack(side="right", padx=(0, 16), pady=14)
 
-        self._wrap_btn_tk = tk.Button(
-            tb, text="Wrap ✓", command=self._toggle_wrap,
-            bg=C["wrap_on_bg"], fg=C["wrap_on_fg"],
-            activebackground=C["btn_abg"], activeforeground=C["btn_afg"],
-            relief="flat", font=("Segoe UI", 10), width=7, cursor="hand2",
-        )
-        self._wrap_btn_tk.pack(side="right", padx=2)
+        GhostButton(actions, text="⚙", small=True, width=34,
+                    command=self._open_options).pack(side="right", padx=(6, 0))
+        GhostButton(actions, text="A+", small=True, width=34,
+                    command=self._zoom_in).pack(side="right", padx=2)
+        GhostButton(actions, text="A−", small=True, width=34,
+                    command=self._zoom_out).pack(side="right", padx=2)
 
-        _tb_btn(tb, "Find", self._toggle_find, width=6).pack(side="right", padx=2)
-        _tb_btn(tb, "Go to line", self._go_to_line, width=10).pack(side="right", padx=2)
+        # Wrap toggle — swaps between SuccessButton/DangerButton styles
+        self._wrap_btn_tk = SuccessButton(
+            actions, text="Wrap on", small=True, command=self._toggle_wrap)
+        self._wrap_btn_tk.pack(side="right", padx=(6, 2))
+
+        GhostButton(actions, text="Find", small=True,
+                    command=self._toggle_find).pack(side="right", padx=2)
+        GhostButton(actions, text="Go to line", small=True,
+                    command=self._go_to_line).pack(side="right", padx=2)
+
+        # 1-px header underline (matches main window)
+        ctk.CTkFrame(self, height=1, fg_color=_t.BORDER_SOFT,
+                     corner_radius=0).pack(fill="x", side="top")
+
+        # Shared font handles for the rest of _build (find bar / status bar)
+        _ff      = _t.font_family()
+        _mono_ff = _t.mono_family()
 
         # ── Find / Replace bar (hidden initially, placed between toolbar and editor) ──
         self._find_bar = tk.Frame(self, bg=C["bar_bg"])
 
+        # 1-px divider above find bar (only visible when bar is shown)
+        self._find_bar_border = tk.Frame(self._find_bar, height=1, bg=C["border"])
+        self._find_bar_border.pack(fill="x", side="top")
+
         fi = tk.Frame(self._find_bar, bg=C["bar_bg"])
-        fi.pack(fill="x", padx=6, pady=5)
+        fi.pack(fill="x", padx=10, pady=8)
 
         def _lbl(text):
             return tk.Label(fi, text=text, bg=C["bar_bg"], fg=C["lbl_fg"],
-                            font=("Segoe UI", 10))
+                            font=(_ff, 11))
 
         def _entry(var, w):
-            e = tk.Entry(fi, textvariable=var, width=w,
-                         bg=C["ent_bg"], fg=C["fg"], insertbackground=C["cursor"],
-                         relief="flat", font=("Consolas", 10), borderwidth=0,
-                         highlightthickness=1, highlightbackground=C["ent_hi"],
-                         highlightcolor=C["ent_hia"])
-            return e
+            return tk.Entry(fi, textvariable=var, width=w,
+                            bg=C["ent_bg"], fg=C["fg"],
+                            insertbackground=C["cursor"],
+                            relief="flat", font=(_mono_ff, 11),
+                            borderwidth=0, highlightthickness=1,
+                            highlightbackground=C["ent_hi"],
+                            highlightcolor=C["ent_hia"])
 
-        def _fbtn(text, cmd, bg=C["btn_bg"], w=8):
+        def _fbtn(text, cmd, *, bg=C["btn_bg"], fg=C["btn_fg"], padx=10):
             return tk.Button(fi, text=text, command=cmd,
-                             bg=bg, fg=C["btn_fg"], activebackground=C["btn_abg"],
-                             relief="flat", font=("Segoe UI", 9), width=w, cursor="hand2")
+                             bg=bg, fg=fg, activebackground=C["btn_abg"],
+                             relief="flat", bd=0, font=(_ff, 10),
+                             cursor="hand2", padx=padx, pady=3)
 
         _lbl("Find:").pack(side="left")
         self._find_var = tk.StringVar()
         self._find_entry = _entry(self._find_var, 22)
-        self._find_entry.pack(side="left", padx=(2, 2))
+        self._find_entry.pack(side="left", padx=(4, 2))
         self._find_var.trace_add("write", lambda *_: self._do_highlight())
         self._find_entry.bind("<Return>",   lambda e: self._find_step(1))
         self._find_entry.bind("<KP_Enter>", lambda e: self._find_step(1))
 
-        _fbtn("▲", lambda: self._find_step(-1), w=2).pack(side="left", padx=1)
-        _fbtn("▼", lambda: self._find_step(1),  w=2).pack(side="left", padx=1)
+        _fbtn("▲", lambda: self._find_step(-1), padx=6).pack(side="left", padx=1)
+        _fbtn("▼", lambda: self._find_step(1),  padx=6).pack(side="left", padx=1)
 
         self._case_var = tk.BooleanVar(value=False)
         tk.Checkbutton(
             fi, text="Aa", variable=self._case_var,
             command=self._do_highlight,
             bg=C["bar_bg"], fg=C["lbl_fg"], selectcolor=C["ent_bg"],
-            activebackground=C["bar_bg"], relief="flat",
-            font=("Segoe UI", 9),
-        ).pack(side="left", padx=4)
+            activebackground=C["bar_bg"], activeforeground=C["btn_afg"],
+            relief="flat", bd=0, font=(_ff, 10),
+        ).pack(side="left", padx=6)
 
         self._find_count = tk.Label(fi, text="", bg=C["bar_bg"], fg=C["cnt_fg"],
-                                    font=("Segoe UI", 9), width=10, anchor="w")
-        self._find_count.pack(side="left", padx=(4, 8))
+                                    font=(_ff, 10), width=10, anchor="w")
+        self._find_count.pack(side="left", padx=(4, 10))
 
         _lbl("Replace:").pack(side="left")
         self._repl_var = tk.StringVar()
         self._repl_entry = _entry(self._repl_var, 18)
-        self._repl_entry.pack(side="left", padx=(2, 4))
+        self._repl_entry.pack(side="left", padx=(4, 6))
         self._repl_entry.bind("<Return>",   lambda e: self._replace_one())
         self._repl_entry.bind("<KP_Enter>", lambda e: self._replace_one())
 
-        _fbtn("Replace",     self._replace_one, bg=C["add_bg"], w=8).pack(side="left", padx=2)
-        _fbtn("Replace All", self._replace_all, bg=C["add_bg"], w=10).pack(side="left", padx=1)
-        _fbtn("✕", self._hide_find, bg=C["close_bg"], w=2).pack(side="right", padx=4)
+        _fbtn("Replace",     self._replace_one,
+              bg=C["add_bg"], fg=C["wrap_on_fg"]).pack(side="left", padx=2)
+        _fbtn("Replace All", self._replace_all,
+              bg=C["add_bg"], fg=C["wrap_on_fg"]).pack(side="left", padx=1)
+        _fbtn("✕", self._hide_find,
+              bg=C["close_bg"], fg=C["wrap_off_fg"], padx=8
+              ).pack(side="right", padx=4)
 
-        # ── Status bar (packed to bottom BEFORE editor so it stays fixed) ──
-        sf = tk.Frame(self, bg=C["bar_bg"], height=24)
+        # ── Status bar (matches main window's status bar) ──
+        sf = tk.Frame(self, bg=C["bar_bg"], height=28)
         sf.pack(fill="x", side="bottom")
         sf.pack_propagate(False)
+        # top border line
+        tk.Frame(sf, height=1, bg=C["border"]).pack(fill="x", side="top")
         self._status = tk.Label(
             sf, text="Ln 1, Col 1  |  0 chars  |  0 words",
-            bg=C["bar_bg"], fg=C["status_fg"], font=("Segoe UI", 9), anchor="w",
+            bg=C["bar_bg"], fg=C["status_fg"], font=(_ff, 10), anchor="w",
         )
-        self._status.pack(side="left", padx=10)
+        self._status.pack(side="left", padx=14)
         self._saved_lbl = tk.Label(
             sf, text="",
-            bg=C["bar_bg"], fg=C["saved_fg"], font=("Segoe UI", 9), anchor="e",
+            bg=C["bar_bg"], fg=C["saved_fg"], font=(_ff, 10), anchor="e",
         )
-        self._saved_lbl.pack(side="right", padx=10)
+        self._saved_lbl.pack(side="right", padx=14)
 
         # ── Editor area ──
         editor = tk.Frame(self, bg=C["gutter_bg"])
@@ -307,8 +326,8 @@ class NotesWindow(ctk.CTkToplevel):
 
         self._text = tk.Text(
             editor,
-            padx=10, pady=4,
-            bg=C["bg"], fg=C["fg"],
+            padx=14, pady=8,
+            bg=C["editor_bg"], fg=C["fg"],
             insertbackground=C["cursor"],
             selectbackground=C["sel_bg"], selectforeground=C["fg"],
             font=(self._font_name, self._font_size),
@@ -326,6 +345,10 @@ class NotesWindow(ctk.CTkToplevel):
         vsb = ctk.CTkScrollbar(editor, command=self._scroll_both)
         vsb.pack(side="right", fill="y")
 
+        # Re-render gutter on width changes (wrap points shift with widget width)
+        self._text.bind("<Configure>",
+                        lambda e: self.after_idle(self._update_linenums),
+                        add="+")
         self._text.configure(yscrollcommand=lambda *a: (
             vsb.set(*a),
             self._linenums.yview_moveto(a[0]),
@@ -718,22 +741,62 @@ class NotesWindow(ctk.CTkToplevel):
         return "break"
 
     def _update_linenums(self) -> None:
+        """Render one sequential gutter number per VISUAL row.
+
+        With wrap=word, each wrapped row gets its own line number — a line
+        that wraps to 3 visual rows shows up as three separate gutter
+        entries.  With wrap=none, display rows equal logical lines, so the
+        gutter just shows 1..N as expected.
+
+        `Go to line N` is interpreted against this same numbering (see
+        `_go_to_line`) and converts N to the underlying text index via
+        Tk's `+ N display lines` offset.
+        """
         self._linenums.config(state="normal")
         self._linenums.delete("1.0", "end")
-        total = int(self._text.index("end-1c").split(".")[0])
-        self._linenums.insert("1.0", "\n".join(str(i) for i in range(1, total + 1)))
+        total = self._total_display_lines()
+        self._linenums.insert(
+            "1.0", "\n".join(str(i) for i in range(1, total + 1)))
         self._linenums.config(state="disabled")
         self._linenums.yview_moveto(self._text.yview()[0])
 
+    def _total_display_lines(self) -> int:
+        """Total visual rows in the text widget (1 minimum)."""
+        try:
+            n = self._text.count("1.0", "end-1c", "displaylines")
+            if isinstance(n, (tuple, list)):
+                n = n[0] if n else 0
+            n = int(n) if n is not None else 0
+        except (tk.TclError, Exception):
+            n = int(self._text.index("end-1c").split(".")[0])
+        return max(1, n)
+
     def _update_status(self, _event=None) -> None:
-        pos     = self._text.index(tk.INSERT)
-        ln, col = pos.split(".")
+        # Visual row of the cursor (matches the gutter numbering).
+        try:
+            v = self._text.count("1.0", "insert", "displaylines")
+            if isinstance(v, (tuple, list)):
+                v = v[0] if v else 0
+            ln = (int(v) if v is not None else 0) + 1
+        except (tk.TclError, Exception):
+            ln = int(self._text.index("insert").split(".")[0])
+
+        # Column within the current visual row.
+        try:
+            row_start = self._text.index("insert display linestart")
+            c = self._text.count(row_start, "insert", "chars")
+            if isinstance(c, (tuple, list)):
+                c = c[0] if c else 0
+            col = int(c) if c is not None else 0
+        except (tk.TclError, Exception):
+            col = int(self._text.index("insert").split(".")[1])
+
         content = self._text.get("1.0", "end-1c")
         chars   = len(content)
         words   = len(content.split()) if content.strip() else 0
-        lines   = int(self._text.index("end-1c").split(".")[0])
+        total   = self._total_display_lines()
         self._status.config(
-            text=f"Ln {ln}, Col {int(col)+1}  |  {chars} chars  |  {words} words  |  {lines} lines"
+            text=f"Ln {ln}, Col {col + 1}  |  {chars} chars  |  {words} words  |  {total} lines"
         )
 
     # ── find / replace ────────────────────────────────────────────────────────
@@ -842,14 +905,19 @@ class NotesWindow(ctk.CTkToplevel):
     # ── go to line ────────────────────────────────────────────────────────────
 
     def _go_to_line(self) -> None:
-        total = int(self._text.index("end-1c").split(".")[0])
+        total = self._total_display_lines()
         dlg = _InputDialog(self, "Go to Line",
                            f"Line number (1-{total}):", "")
         self.wait_window(dlg)
         if dlg.result and dlg.result.strip().isdigit():
-            ln = max(1, min(int(dlg.result.strip()), total))
-            self._text.mark_set(tk.INSERT, f"{ln}.0")
-            self._text.see(f"{ln}.0")
+            n = max(1, min(int(dlg.result.strip()), total))
+            # Visual row N → text index via "+ N display lines" from "1.0".
+            try:
+                target = self._text.index(f"1.0 + {n - 1} display lines")
+            except tk.TclError:
+                target = f"{n}.0"
+            self._text.mark_set(tk.INSERT, target)
+            self._text.see(target)
             self._text.focus_set()
             self._update_status()
 
@@ -872,15 +940,21 @@ class NotesWindow(ctk.CTkToplevel):
         self._update_linenums()
 
     def _toggle_wrap(self) -> None:
-        C = self._C
+        from ui import theme as _t
         self._wrap_mode = "none" if self._wrap_mode == "word" else "word"
         self._text.configure(wrap=self._wrap_mode)
         if self._wrap_mode == "word":
             self._wrap_btn_tk.configure(
-                text="Wrap ✓", bg=C["wrap_on_bg"], fg=C["wrap_on_fg"])
+                text="Wrap on",
+                fg_color=_t.SUCCESS_BG, hover_color=_t.SUCCESS_BORDER,
+                text_color=_t.SUCCESS, border_color=_t.SUCCESS_BORDER)
         else:
             self._wrap_btn_tk.configure(
-                text="Wrap ✗", bg=C["wrap_off_bg"], fg=C["wrap_off_fg"])
+                text="Wrap off",
+                fg_color=_t.DANGER_BG, hover_color=_t.DANGER_BORDER,
+                text_color=_t.DANGER, border_color=_t.DANGER_BORDER)
+        # Wrap mode change alters display rows — rebuild gutter alignment.
+        self.after(0, self._update_linenums)
 
     # ── options dialog ────────────────────────────────────────────────────────
 
@@ -986,71 +1060,90 @@ class NotesWindow(ctk.CTkToplevel):
 
 class _OptionsDialog(ctk.CTkToplevel):
     def __init__(self, notes_win: NotesWindow) -> None:
-        super().__init__(notes_win)
+        from ui import theme as _t
+        super().__init__(notes_win, fg_color=_t.BG_SURFACE)
         self._nw = notes_win
         self.title("Quick Notes — Options")
         self.resizable(True, True)
         self.wm_attributes("-topmost", True)
+        self.configure(fg_color=_t.BG_SURFACE)
         self._build()
         self.update_idletasks()
-        self.geometry(f"420x{max(self.winfo_reqheight() + 30, 400)}")
+        self.geometry(f"440x{max(self.winfo_reqheight() + 30, 420)}")
         self.after(120, self.grab_set)
+        from utils.resource_path import apply_window_icon
+        self.after(200, lambda: apply_window_icon(self))
         self.lift()
 
     def _build(self) -> None:
+        from ui import theme as _t
+        from ui.widgets import GhostButton, PrimaryButton
         pad = {"padx": 20, "pady": 6}
+        _entry_kw = dict(fg_color=_t.BG_INPUT, border_color=_t.BORDER,
+                         border_width=1, text_color=_t.TEXT_1)
+        _opt_kw = dict(fg_color=_t.BG_ELEVATED, button_color=_t.BG_HOVER,
+                       button_hover_color=_t.BORDER_STRONG,
+                       text_color=_t.TEXT_1, dropdown_fg_color=_t.BG_ELEVATED,
+                       dropdown_text_color=_t.TEXT_1,
+                       dropdown_hover_color=_t.BG_HOVER)
 
-        ctk.CTkLabel(self, text="Font", font=ctk.CTkFont(size=13, weight="bold"),
+        ctk.CTkLabel(self, text="Font", font=_t.font(13, "bold"),
+                     text_color=_t.TEXT_1,
                      anchor="w").pack(fill="x", padx=20, pady=(16, 2))
 
         font_row = ctk.CTkFrame(self, fg_color="transparent")
         font_row.pack(fill="x", **pad)
-        ctk.CTkLabel(font_row, text="Family:", width=80, anchor="w").pack(side="left")
+        ctk.CTkLabel(font_row, text="Family:", width=80, anchor="w",
+                     font=_t.font(12), text_color=_t.TEXT_2
+                     ).pack(side="left")
         self._font_var = ctk.StringVar(value=self._nw._font_name)
         ctk.CTkOptionMenu(font_row, variable=self._font_var,
-                          values=_FONTS, width=180).pack(side="left", padx=8)
+                          values=_FONTS, width=200, height=30,
+                          font=_t.font(12), **_opt_kw).pack(side="left", padx=8)
 
         size_row = ctk.CTkFrame(self, fg_color="transparent")
         size_row.pack(fill="x", **pad)
-        ctk.CTkLabel(size_row, text="Size:", width=80, anchor="w").pack(side="left")
+        ctk.CTkLabel(size_row, text="Size:", width=80, anchor="w",
+                     font=_t.font(12), text_color=_t.TEXT_2
+                     ).pack(side="left")
         self._size_var = ctk.StringVar(value=str(self._nw._font_size))
         ctk.CTkEntry(size_row, textvariable=self._size_var,
-                     width=60, height=28).pack(side="left", padx=8)
+                     width=70, height=30, font=_t.font(12),
+                     **_entry_kw).pack(side="left", padx=8)
 
         ctk.CTkLabel(self, text="Window Size",
-                     font=ctk.CTkFont(size=13, weight="bold"),
+                     font=_t.font(13, "bold"), text_color=_t.TEXT_1,
                      anchor="w").pack(fill="x", padx=20, pady=(14, 2))
 
         preset_row = ctk.CTkFrame(self, fg_color="transparent")
         preset_row.pack(fill="x", **pad)
         for label, geo in (("820x580", "820x580"), ("1200x800", "1200x800"),
                            ("1400x900", "1400x900"), ("1600x1000", "1600x1000")):
-            ctk.CTkButton(
-                preset_row, text=label, width=86, height=28,
-                fg_color=("#1e2a3a", "#1e2a3a"),
-                hover_color=("#2a3a4a", "#2a3a4a"),
-                command=lambda g=geo: self._apply_geo(g),
-            ).pack(side="left", padx=3)
+            GhostButton(preset_row, text=label, small=True,
+                        command=lambda g=geo: self._apply_geo(g)
+                        ).pack(side="left", padx=3)
 
         custom_row = ctk.CTkFrame(self, fg_color="transparent")
         custom_row.pack(fill="x", **pad)
-        ctk.CTkLabel(custom_row, text="Custom:", width=70, anchor="w").pack(side="left")
+        ctk.CTkLabel(custom_row, text="Custom:", width=70, anchor="w",
+                     font=_t.font(12), text_color=_t.TEXT_2).pack(side="left")
         current = self._nw.geometry().split("+")[0]
         self._geo_var = ctk.StringVar(value=current)
         ctk.CTkEntry(custom_row, textvariable=self._geo_var,
-                     width=120, height=28,
-                     placeholder_text="1200x800").pack(side="left", padx=6)
-        ctk.CTkButton(custom_row, text="Apply", width=70, height=28,
-                      command=lambda: self._apply_geo(self._geo_var.get())
-                      ).pack(side="left", padx=4)
+                     width=130, height=30, font=_t.font(12),
+                     placeholder_text="1200x800",
+                     placeholder_text_color=_t.TEXT_3,
+                     **_entry_kw).pack(side="left", padx=6)
+        GhostButton(custom_row, text="Apply", small=True,
+                    command=lambda: self._apply_geo(self._geo_var.get())
+                    ).pack(side="left", padx=4)
 
         btn_row = ctk.CTkFrame(self, fg_color="transparent")
-        btn_row.pack(pady=16)
-        ctk.CTkButton(btn_row, text="OK", width=90,
-                      command=self._ok).pack(side="left", padx=6)
-        ctk.CTkButton(btn_row, text="Cancel", width=90,
-                      fg_color=("#252535", "#252535"),
-                      command=self.destroy).pack(side="left", padx=6)
+        btn_row.pack(pady=18)
+        PrimaryButton(btn_row, text="OK", command=self._ok
+                      ).pack(side="left", padx=6)
+        GhostButton(btn_row, text="Cancel", command=self.destroy
+                    ).pack(side="left", padx=6)
 
     def _apply_geo(self, geo: str) -> None:
         try:
@@ -1075,30 +1168,37 @@ class _OptionsDialog(ctk.CTkToplevel):
 
 class _InputDialog(ctk.CTkToplevel):
     def __init__(self, parent, title: str, label: str, initial: str = "") -> None:
-        super().__init__(parent)
+        from ui import theme as _t
+        from ui.widgets import GhostButton, PrimaryButton
+        super().__init__(parent, fg_color=_t.BG_SURFACE)
         self.result: str | None = None
         self.title(title)
-        self.geometry("320x130")
+        self.geometry("340x150")
         self.resizable(False, False)
         self.wm_attributes("-topmost", True)
+        self.configure(fg_color=_t.BG_SURFACE)
 
-        ctk.CTkLabel(self, text=label, font=ctk.CTkFont(size=13)).pack(
-            padx=16, pady=(12, 4))
+        ctk.CTkLabel(self, text=label, font=_t.font(13),
+                     text_color=_t.TEXT_1).pack(padx=18, pady=(16, 6),
+                                                anchor="w")
         self._var = ctk.StringVar(value=initial)
-        e = ctk.CTkEntry(self, textvariable=self._var, width=280, height=30)
-        e.pack(padx=16)
+        e = ctk.CTkEntry(self, textvariable=self._var, width=300, height=32,
+                         fg_color=_t.BG_INPUT, border_color=_t.BORDER,
+                         border_width=1, text_color=_t.TEXT_1,
+                         font=_t.font(12))
+        e.pack(padx=18)
         e.bind("<Return>", lambda _: self._ok())
 
         row = ctk.CTkFrame(self, fg_color="transparent")
-        row.pack(pady=10)
-        ctk.CTkButton(row, text="OK", width=80, command=self._ok).pack(
-            side="left", padx=4)
-        ctk.CTkButton(row, text="Cancel", width=80,
-                      fg_color=("#252535", "#252535"),
-                      hover_color=("#353548", "#353548"),
-                      command=self.destroy).pack(side="left", padx=4)
+        row.pack(pady=12)
+        PrimaryButton(row, text="OK", command=self._ok
+                      ).pack(side="left", padx=4)
+        GhostButton(row, text="Cancel", command=self.destroy
+                    ).pack(side="left", padx=4)
 
         self.after(120, self.grab_set)
+        from utils.resource_path import apply_window_icon
+        self.after(200, lambda: apply_window_icon(self))
         self.lift()
         e.focus_set()
 

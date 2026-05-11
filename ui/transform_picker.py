@@ -48,6 +48,8 @@ class TransformPicker(ctk.CTkToplevel):
         for i in range(min(9, len(TRANSFORMS))):
             self.bind(str(i + 1), lambda _e, idx=i: self._apply(idx))
 
+        from utils.resource_path import apply_window_icon
+        self.after(200, lambda: apply_window_icon(self))
         self.lift()
         self.after(60, self.focus_force)
 
@@ -229,6 +231,8 @@ class FormatPicker(ctk.CTkToplevel):
         self.protocol("WM_DELETE_WINDOW", self.destroy)
         self.bind("<Escape>", lambda _e: self.destroy())
 
+        from utils.resource_path import apply_window_icon
+        self.after(200, lambda: apply_window_icon(self))
         self.lift()
         self.after(60, self.focus_force)
 
@@ -320,9 +324,7 @@ class FormatPicker(ctk.CTkToplevel):
 
         key = app.config.settings.gemini_api_key.strip()
         if not key:
-            if app.window:
-                app.window.after(0, lambda: app.window.update_status(
-                    "Reformat Code: no Gemini API key — add one in Settings -> Gemini AI"))
+            show_api_key_missing(app)
             return
 
         if app.window:
@@ -436,6 +438,59 @@ def _show_info_popup(app, label: str, result: str) -> None:
 
     if app.window:
         app.window.update_status(f"{label}: {result}")
+
+
+# ── "API key missing" popup (shared by gemini_clipboard + reformat code) ──────
+
+def show_api_key_missing(app) -> None:
+    """Themed modal dialog informing the user a Gemini API key is required.
+
+    Safe to call from any thread — the actual window creation is hopped onto
+    the UI thread via window.after() when needed.
+    """
+    if app.window is None:
+        return
+    if threading.current_thread() is threading.main_thread():
+        _build_api_key_missing(app)
+    else:
+        app.window.after(0, lambda: _build_api_key_missing(app))
+
+
+def _build_api_key_missing(app) -> None:
+    from ui import theme
+    from ui.widgets import PrimaryButton
+    from utils.resource_path import apply_window_icon
+
+    win = ctk.CTkToplevel(fg_color=theme.BG_SURFACE)
+    win.title("Gemini API key required")
+    win.resizable(False, False)
+    win.attributes("-topmost", True)
+    win.configure(fg_color=theme.BG_SURFACE)
+
+    ctk.CTkLabel(
+        win, text="Gemini API key required",
+        font=theme.font(14, "bold"), text_color=theme.TEXT_1,
+        fg_color="transparent",
+    ).pack(padx=28, pady=(20, 6))
+
+    ctk.CTkLabel(
+        win,
+        text="Add your free key in Settings → Gemini AI to use this action.",
+        font=theme.font(12), text_color=theme.TEXT_3,
+        wraplength=320, justify="center",
+        fg_color="transparent",
+    ).pack(padx=28, pady=(0, 16))
+
+    PrimaryButton(win, text="OK", command=win.destroy
+                  ).pack(pady=(0, 18))
+
+    win.update_idletasks()
+    w, h = win.winfo_reqwidth(), win.winfo_reqheight()
+    sw, sh = win.winfo_screenwidth(), win.winfo_screenheight()
+    win.geometry(f"+{(sw - w) // 2}+{(sh - h) // 2}")
+    win.after(200, lambda: apply_window_icon(win))
+    win.lift()
+    win.after(60, win.focus_force)
 
 
 # ── clipboard helpers (usable from any thread) ────────────────────────────────

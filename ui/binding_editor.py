@@ -50,6 +50,8 @@ class BindingEditor(ctk.CTkToplevel):
         # Remove hard topmost after the window is fully drawn so it no longer
         # floats above unrelated apps, only above the HotkeyTool window
         self.after(300, lambda: self.attributes("-topmost", False))
+        from utils.resource_path import apply_window_icon
+        self.after(200, lambda: apply_window_icon(self))
         self.lift()
         self.focus_force()
 

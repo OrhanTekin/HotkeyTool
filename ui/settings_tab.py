@@ -135,6 +135,8 @@ class SettingsTab(ctk.CTkFrame):
         self._key_show_btn = GhostButton(r, text="Show", small=True,
                                          command=self._toggle_key_visibility)
         self._key_show_btn.pack(side="right", padx=2)
+        GhostButton(r, text="Copy", small=True, command=self._copy_api_key
+                    ).pack(side="right", padx=2)
         PrimaryButton(r, text="Save", small=True, command=self._save_gemini_key
                       ).pack(side="right", padx=2)
 
@@ -385,6 +387,17 @@ class SettingsTab(ctk.CTkFrame):
         else:
             self._key_entry.configure(show="•")
             self._key_show_btn.configure(text="Show")
+
+    def _copy_api_key(self) -> None:
+        """Copy the real API key, even while the entry masks it with dots.
+        The StringVar always holds the actual value; only the Entry's
+        rendering uses show="•"."""
+        key = self._gemini_key_var.get().strip()
+        if not key:
+            if self.app.window:
+                self.app.window.toast("No API key to copy", kind="warn")
+            return
+        self._copy_text(key)
 
     def _toggle_tutorial(self) -> None:
         if self._tut_visible:

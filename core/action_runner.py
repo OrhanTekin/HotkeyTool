@@ -282,8 +282,11 @@ def _gemini_clipboard(action: Action) -> None:
     from core.gemini import call_gemini, clipboard_image, clipboard_text, DEFAULT_PROMPT
     key = _app_callbacks.get("get_gemini_key", lambda: "")()
     if not key:
-        _write_clipboard_text(
-            "[Gemini] No API key set. Add your free key in Settings → Gemini AI.")
+        # Show a visible "API key needed" dialog instead of silently
+        # overwriting the clipboard with an error string.
+        cb = _app_callbacks.get("show_api_key_missing")
+        if cb:
+            cb()
         return
     prompt = action.value.strip() or DEFAULT_PROMPT
     try:

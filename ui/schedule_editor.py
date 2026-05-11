@@ -41,6 +41,8 @@ class ScheduleEditor(ctk.CTkToplevel):
         self._build()
         self.after(120, self.grab_set)
         self.after(300, lambda: self.attributes("-topmost", False))
+        from utils.resource_path import apply_window_icon
+        self.after(200, lambda: apply_window_icon(self))
         self.lift()
         self.focus_force()
 

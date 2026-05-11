@@ -78,22 +78,31 @@ class Schedule:
 @dataclass
 class Snippet:
     id: str
-    abbreviation: str    # e.g. "@@addr"
-    expansion: str       # e.g. "123 Main St, City"
+    # Multiple abbreviations all expand to the same `expansion` text.
+    # e.g. ["@@addr", "@@a"] → "123 Main St, City"
+    abbreviations: List[str] = field(default_factory=list)
+    expansion: str = ""
     enabled: bool = True
 
     @classmethod
     def new(cls) -> "Snippet":
-        return cls(id=str(uuid.uuid4()), abbreviation="", expansion="")
+        return cls(id=str(uuid.uuid4()), abbreviations=[], expansion="")
 
     def to_dict(self) -> dict:
-        return {"id": self.id, "abbreviation": self.abbreviation,
-                "expansion": self.expansion, "enabled": self.enabled}
+        return {"id": self.id,
+                "abbreviations": list(self.abbreviations),
+                "expansion": self.expansion,
+                "enabled": self.enabled}
 
     @classmethod
     def from_dict(cls, d: dict) -> "Snippet":
+        # Back-compat: legacy configs stored a single "abbreviation" string.
+        abbrs = d.get("abbreviations")
+        if abbrs is None:
+            legacy = d.get("abbreviation", "")
+            abbrs = [legacy] if legacy else []
         return cls(id=d.get("id", str(uuid.uuid4())),
-                   abbreviation=d.get("abbreviation", ""),
+                   abbreviations=[a for a in abbrs if a],
                    expansion=d.get("expansion", ""),
                    enabled=d.get("enabled", True))
 

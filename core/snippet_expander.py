@@ -172,21 +172,22 @@ class SnippetExpander:
             if len(self._buffer) > 64:
                 self._buffer = self._buffer[-64:]
 
-            # Check every enabled snippet
+            # Check every enabled snippet — any of its abbreviations may match.
             buf = self._buffer
             snippets = self._get_snippets()
             for snippet in snippets:
                 if not snippet.enabled:
                     continue
-                abbr = snippet.abbreviation.lower()
-                if abbr and buf.endswith(abbr):
-                    self._buffer = ""
-                    threading.Thread(
-                        target=self._expand,
-                        args=(snippet.abbreviation, snippet.expansion),
-                        daemon=True,
-                    ).start()
-                    return
+                for abbr_orig in snippet.abbreviations:
+                    abbr = abbr_orig.lower()
+                    if abbr and buf.endswith(abbr):
+                        self._buffer = ""
+                        threading.Thread(
+                            target=self._expand,
+                            args=(abbr_orig, snippet.expansion),
+                            daemon=True,
+                        ).start()
+                        return
 
     def _expand(self, abbreviation: str, expansion: str) -> None:
         import keyboard

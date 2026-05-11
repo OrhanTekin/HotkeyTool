@@ -961,9 +961,10 @@ class PlannerTab(ctk.CTkFrame):
         for ev in ("<MouseWheel>", "<Button-4>", "<Button-5>"):
             cell.bind(ev, self._on_cal_scroll, add="+")
 
-        # Header row: day number + dot cluster + done mark
-        head = tk.Frame(cell, bg=bg)
+        # Header row: day number + count badge / done mark
+        head = tk.Frame(cell, bg=bg, height=20)
         head.pack(fill="x", padx=6, pady=(4, 2))
+        head.pack_propagate(False)
 
         if is_today:
             num_lbl = tk.Label(
@@ -972,46 +973,44 @@ class PlannerTab(ctk.CTkFrame):
                 font=("Segoe UI", 8, "bold"),
                 width=2, padx=2,
             )
+            # Pick a badge bg that contrasts with the today cell's ACCENT_BG.
+            badge_bg, badge_fg = theme.BG_ELEVATED, theme.ACCENT
         else:
             num_color = theme.TEXT_4 if other else theme.TEXT_2
             num_lbl = tk.Label(
                 head, text=str(d.day), bg=bg, fg=num_color,
                 font=("Segoe UI", 9, "normal"),
             )
+            badge_bg, badge_fg = theme.ACCENT_BG, theme.ACCENT
         num_lbl.pack(side="left")
 
-        # count badge: top-right showing total number of tasks
-        if active:
+        # Done tick OR count badge on the top-right of the head row.
+        # Done tick wins when every task is completed.
+        if all_done:
+            tk.Label(head, text="✓",
+                     bg=theme.SUCCESS, fg=theme.BG_BASE,
+                     font=("Segoe UI", 8, "bold"), padx=3
+                     ).pack(side="right")
+        elif active:
             tk.Label(head, text=str(len(active)),
-                     bg=theme.ACCENT_BG, fg=theme.ACCENT,
-                     font=("Segoe UI", 7, "bold"), padx=3).pack(side="right")
+                     bg=badge_bg, fg=badge_fg,
+                     font=("Segoe UI", 7, "bold"), padx=3
+                     ).pack(side="right")
 
-        # Body: priority pills (max 2)
+        # Body: priority pills (max 2). Fixed pill height keeps cells
+        # visually consistent regardless of task content.
         body = tk.Frame(cell, bg=bg)
         body.pack(fill="x", padx=4)
         for t in active[:2]:
-            pill = tk.Frame(body, bg=bg)
+            pill = tk.Frame(body, bg=bg, height=14)
             pill.pack(fill="x", pady=1)
+            pill.pack_propagate(False)
             pri_col = _PRI_COLOR.get(t.priority, theme.PRI_MEDIUM)
             tk.Frame(pill, bg=pri_col, width=2).pack(side="left", fill="y")
             label_txt = (t.start_time + " " if t.start_time else "") + t.text[:14]
             tk.Label(pill, text=label_txt, bg=bg, fg=theme.TEXT_2,
                      font=("Segoe UI", 7), anchor="w"
-                     ).pack(side="left", padx=(3, 0), fill="x", expand=True)
-        # Done mark (top-right, when every task is done)
-        if all_done:
-            done_dot = tk.Label(
-                cell, text="✓", bg=theme.SUCCESS, fg=theme.BG_BASE,
-                font=("Segoe UI", 8, "bold"), padx=2, pady=0,
-            )
-            done_dot.place(x=4, y=4, anchor="nw")
-            # actually place top-right
-            cell.update_idletasks()
-            try:
-                w = cell.winfo_width() or 80
-                done_dot.place_configure(x=w - 18, y=2)
-            except Exception:
-                pass
+                     ).pack(side="left", padx=(3, 0), fill="both", expand=True)
 
         # Bind day-click to every widget inside the cell so no dead zones.
         # After() defers until widgets are fully registered in winfo_children().
@@ -1081,26 +1080,34 @@ class PlannerTab(ctk.CTkFrame):
                 for ev in ("<MouseWheel>", "<Button-4>", "<Button-5>"):
                     cell.bind(ev, self._on_cal_scroll, add="+")
 
-                # Zone label (faintly, in top-left of every column 0)
+                # Reserved top strip — present in EVERY cell so that pills in
+                # column 0 (which carries the zone label) start at the same y
+                # as pills in columns 1..6.  Without this, packing the zone
+                # label only in column 0 made each row's first cell look
+                # ~13 px taller than its siblings.
+                top = tk.Frame(cell, bg=theme.BG_BASE, height=16)
+                top.pack(fill="x", side="top")
+                top.pack_propagate(False)
                 if col == 0:
-                    tk.Label(cell, text=zone_name.upper(),
+                    tk.Label(top, text=zone_name.upper(),
                              bg=theme.BG_BASE, fg=theme.TEXT_4,
                              font=("Segoe UI", 7, "bold")
-                             ).pack(anchor="nw", padx=4, pady=2)
+                             ).pack(anchor="w", side="left", padx=4)
 
                 pill_frames: set = set()
                 for t in zone_todos[:2]:
-                    pill = tk.Frame(cell, bg=theme.BG_BASE)
+                    pill = tk.Frame(cell, bg=theme.BG_BASE, height=16)
                     pill.pack(fill="x", padx=2, pady=1)
+                    pill.pack_propagate(False)
                     pill_frames.add(pill)
                     pri_col = _PRI_COLOR.get(t.priority, theme.PRI_MEDIUM)
-                    tk.Frame(pill, bg=pri_col, width=2, height=14).pack(side="left", fill="y")
+                    tk.Frame(pill, bg=pri_col, width=2).pack(side="left", fill="y")
                     txt = t.text[:14] + "…" if len(t.text) > 14 else t.text
                     if t.start_time:
                         txt = t.start_time + " " + txt
                     lbl = tk.Label(pill, text=txt, bg=theme.BG_BASE, fg=theme.TEXT_2,
                                    font=("Segoe UI", 7), anchor="w", cursor="fleur")
-                    lbl.pack(side="left", padx=(3, 0), fill="x", expand=True)
+                    lbl.pack(side="left", padx=(3, 0), fill="both", expand=True)
                     pill.bind("<ButtonPress-1>",
                               lambda e, tid=t.id, _ds=ds: self._badge_press(tid, _ds, e))
                     lbl.bind("<ButtonPress-1>",
@@ -1108,7 +1115,8 @@ class PlannerTab(ctk.CTkFrame):
                 if len(zone_todos) > 2:
                     tk.Label(cell, text=f"+{len(zone_todos) - 2}",
                              bg=theme.BG_BASE, fg=theme.TEXT_4,
-                             font=("Segoe UI", 7)).pack(anchor="w", padx=4)
+                             font=("Segoe UI", 7), anchor="w"
+                             ).pack(fill="x", padx=6)
 
                 # Bind day-click to all cell descendants except pill subtrees
                 def _make_week_cell_binder(the_cell, the_ds, skip_trees):
@@ -1520,6 +1528,8 @@ class _TodoDialog(ctk.CTkToplevel):
         self._build(existing, preset_date)
         self.geometry("480x600")
         self.after(120, self.grab_set)
+        from utils.resource_path import apply_window_icon
+        self.after(200, lambda: apply_window_icon(self))
         self.lift()
 
     def _build(self, ex: Optional[Todo], preset_date: str) -> None:

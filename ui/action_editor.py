@@ -17,6 +17,7 @@ _TYPES = [
     ("Open App",             "open_app"),
     ("Type Text",            "type_text"),
     ("Run Command",          "run_command"),
+    ("Run Python Script",    "run_python_script"),
     ("Sende Taste(n)",       "send_keys"),
     ("Media Control",        "media_control"),
     ("Toggle Always On Top", "toggle_topmost"),
@@ -221,6 +222,38 @@ class ActionEditor(ctk.CTkFrame):
                 command=self._browse,
             ).pack(side="left", padx=2)
 
+        elif atype == "run_python_script":
+            # Row 1: script path + browse
+            path_row = ctk.CTkFrame(self.value_frame, fg_color="transparent")
+            path_row.pack(fill="x")
+            ctk.CTkLabel(
+                path_row, text="Script:", width=52,
+                font=ctk.CTkFont(size=11),
+            ).pack(side="left")
+            ctk.CTkEntry(
+                path_row, textvariable=self.value_var,
+                width=284, height=28,
+                placeholder_text="C:\\...\\script.py",
+            ).pack(side="left", padx=4)
+            ctk.CTkButton(
+                path_row, text="Browse...", width=84, height=28,
+                command=self._browse_python_script,
+            ).pack(side="left", padx=2)
+
+            # Row 2: optional CLI arguments
+            args_row = ctk.CTkFrame(self.value_frame, fg_color="transparent")
+            args_row.pack(fill="x", pady=(4, 0))
+            ctk.CTkLabel(
+                args_row, text="Args:", width=52,
+                font=ctk.CTkFont(size=11),
+            ).pack(side="left")
+            self._py_args_var = ctk.StringVar(value=self._action.args)
+            ctk.CTkEntry(
+                args_row, textvariable=self._py_args_var,
+                width=372, height=28,
+                placeholder_text="optional CLI arguments (space-separated)",
+            ).pack(side="left", padx=4)
+
         elif atype == "send_keys":
             ctk.CTkLabel(
                 self.value_frame, text="Taste(n):", width=62,
@@ -417,6 +450,15 @@ class ActionEditor(ctk.CTkFrame):
         if path:
             self.value_var.set(path.replace("/", "\\"))
 
+    def _browse_python_script(self) -> None:
+        from tkinter import filedialog
+        path = filedialog.askopenfilename(
+            title="Select Python Script",
+            filetypes=[("Python scripts", "*.py *.pyw"), ("All Files", "*.*")],
+        )
+        if path:
+            self.value_var.set(path.replace("/", "\\"))
+
     # ── public ───────────────────────────────────────────────────────────────
 
     def get_action(self) -> Action:
@@ -436,4 +478,9 @@ class ActionEditor(ctk.CTkFrame):
         except ValueError:
             delay = 0
 
-        return Action(type=atype, value=value, delay_after_ms=delay)
+        # Only run_python_script currently exposes the `args` field in the UI.
+        args = ""
+        if atype == "run_python_script" and hasattr(self, "_py_args_var"):
+            args = self._py_args_var.get().strip()
+
+        return Action(type=atype, value=value, args=args, delay_after_ms=delay)

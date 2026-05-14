@@ -107,14 +107,15 @@ def _dispatch(action: Action, trigger_hwnd: int = 0) -> None:
         return
 
     handlers = {
-        "open_url":      _open_url,
-        "open_app":      _open_app,
-        "type_text":     _type_text,
-        "run_command":   _run_command,
-        "media_control": _media_control,
-        "send_keys":     _send_keys,
-        "wait":          _wait,
-        "color_picker":  _color_picker,
+        "open_url":          _open_url,
+        "open_app":          _open_app,
+        "type_text":         _type_text,
+        "run_command":       _run_command,
+        "run_python_script": _run_python_script,
+        "media_control":     _media_control,
+        "send_keys":         _send_keys,
+        "wait":              _wait,
+        "color_picker":      _color_picker,
     }
     fn = handlers.get(action.type)
     if fn:
@@ -159,6 +160,35 @@ def _run_command(action: Action) -> None:
         shell=True,
         creationflags=subprocess.CREATE_NO_WINDOW,
     )
+
+
+def _run_python_script(action: Action) -> None:
+    """Launch a .py / .pyw script with the Windows Python launcher.
+
+    Tries `pyw.exe` (Python Launcher, windowless variant) first because it
+    handles shebangs and version dispatch.  Falls back to plain `pythonw.exe`
+    and finally to `os.startfile()` which lets Windows pick whatever handler
+    is associated with `.py`.  Always windowless — fire-and-forget.
+    """
+    script = action.value.strip()
+    if not script:
+        return
+    cli_args = action.args.strip().split() if action.args.strip() else []
+
+    for launcher in ("pyw.exe", "pythonw.exe"):
+        try:
+            subprocess.Popen(
+                [launcher, script, *cli_args],
+                creationflags=subprocess.CREATE_NO_WINDOW,
+            )
+            return
+        except (FileNotFoundError, OSError):
+            continue
+
+    try:
+        os.startfile(script)
+    except Exception:
+        pass
 
 
 def _media_control(action: Action) -> None:

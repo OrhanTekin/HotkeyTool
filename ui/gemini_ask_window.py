@@ -146,11 +146,12 @@ class GeminiAskWindow(ctk.CTkToplevel):
 
     def _run(self, key: str, question: str) -> None:
         try:
-            from core.gemini import call_gemini
+            from core.gemini import call_gemini, current_model
             result = call_gemini(key, question)
+            model = current_model() or "Gemini"
             self.after(0, lambda: self._set_result(result))
             self.after(0, lambda: self._status.configure(
-                text="Done.", text_color=theme.SUCCESS))
+                text=f"Done — {model}", text_color=theme.SUCCESS))
         except Exception as exc:
             self.after(0, lambda: self._set_result(f"[Error] {exc}"))
             self.after(0, lambda: self._status.configure(

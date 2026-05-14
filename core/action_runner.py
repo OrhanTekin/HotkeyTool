@@ -279,7 +279,8 @@ def _write_clipboard_text(text: str) -> None:
 
 def _gemini_clipboard(action: Action) -> None:
     """Send clipboard image or text to Gemini; replace clipboard with result."""
-    from core.gemini import call_gemini, clipboard_image, clipboard_text, DEFAULT_PROMPT
+    from core.gemini import (call_gemini, clipboard_image, clipboard_text,
+                             current_model, DEFAULT_PROMPT)
     key = _app_callbacks.get("get_gemini_key", lambda: "")()
     if not key:
         # Show a visible "API key needed" dialog instead of silently
@@ -300,6 +301,11 @@ def _gemini_clipboard(action: Action) -> None:
                 return
             result = call_gemini(key, f"{prompt}\n\n{text}")
         _write_clipboard_text(result)
+        # Surface the model that answered in the main window's status bar so
+        # the user can see which one was picked.
+        status = _app_callbacks.get("update_status")
+        if status:
+            status(f"Gemini → clipboard  ({current_model() or 'Gemini'})")
     except Exception as exc:
         _write_clipboard_text(f"[Gemini Error] {exc}")
 

@@ -56,6 +56,7 @@ class App:
         register_app_callback("get_gemini_key",        lambda: self.config.settings.gemini_api_key)
         register_app_callback("gemini_ask",            self._cb_gemini_ask)
         register_app_callback("show_api_key_missing",  self._cb_show_api_key_missing)
+        register_app_callback("update_status",         self._cb_update_status)
 
     # ── lifecycle ─────────────────────────────────────────────────────────────
 
@@ -275,6 +276,11 @@ class App:
         Safe to invoke from action_runner's daemon thread."""
         from ui.transform_picker import show_api_key_missing
         show_api_key_missing(self)
+
+    def _cb_update_status(self, text: str) -> None:
+        """Cross-thread helper for action_runner to push status-bar text."""
+        if self.window:
+            self.window.after(0, lambda: self.window.update_status(text))
 
     # ── stats widget ──────────────────────────────────────────────────────────
 

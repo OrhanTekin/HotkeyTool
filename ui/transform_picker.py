@@ -381,7 +381,9 @@ def _reformat_with_gemini(key: str, lang_name: str, text: str,
         return
 
     _write_clipboard_text(result)
-    _do_paste(trigger_hwnd, f"Reformat: {lang_name}", app)
+    from core.gemini import current_model
+    _do_paste(trigger_hwnd,
+              f"Reformat: {lang_name}  ({current_model() or 'Gemini'})", app)
 
 
 def _strip_code_fence(text: str) -> str:

@@ -125,9 +125,43 @@ class App:
 
     def _do_show(self) -> None:
         if self.window:
-            self.window.deiconify()
+            self._reveal_window_smoothly()
             self.window.lift()
             self.window.focus_force()
+
+    def _reveal_window_smoothly(self) -> None:
+        """Make a withdrawn window appear without the bottom-to-top paint flash.
+
+        After `withdraw()`, Tk discards the rendered surface.  `deiconify()`
+        then asks Windows to show the window before any widgets have been
+        repainted, so you briefly see a white frame with widgets streaming
+        in from the bottom.  Workaround: set the OS-level alpha to 0, then
+        deiconify, then force-render via `update_idletasks` while the window
+        is invisible, then restore alpha.
+        """
+        w = self.window
+        if not w:
+            return
+        try:
+            w.attributes("-alpha", 0.0)
+        except Exception:
+            pass
+        try:
+            w.deiconify()
+        except Exception:
+            return
+        try:
+            # update() processes pending paint events too (not just geometry
+            # / idle callbacks like update_idletasks), so every widget is
+            # actually drawn into the off-screen alpha-0 surface before we
+            # unmask it.
+            w.update()
+        except Exception:
+            pass
+        try:
+            w.attributes("-alpha", 1.0)
+        except Exception:
+            pass
 
     def hide_window(self) -> None:
         if self.window:
@@ -154,7 +188,7 @@ class App:
         # Hidden (withdrawn) or minimized → show + focus.
         # Visible (regardless of foreground) → withdraw to tray.
         if state in ("withdrawn", "iconic"):
-            self.window.deiconify()
+            self._reveal_window_smoothly()
             self.window.lift()
             self.window.focus_force()
         else:

@@ -42,6 +42,16 @@ class MainWindow(ctk.CTk):
         self.geometry("1100x680")
         self.minsize(880, 560)
 
+        # Pre-arm the Windows WS_EX_LAYERED extended style by setting alpha
+        # explicitly once.  Without this, the *first* call in
+        # App._reveal_window_smoothly (alpha 0 → deiconify → alpha 1) races
+        # the OS adding the layered style, so the very first reveal still
+        # shows the bottom-to-top paint flash.
+        try:
+            self.wm_attributes("-alpha", 1.0)
+        except Exception:
+            pass
+
         # toast first so refresh callbacks during build can use it
         self._toast = Toast(self)
 

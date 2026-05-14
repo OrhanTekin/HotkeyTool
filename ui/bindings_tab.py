@@ -12,7 +12,7 @@ from core.models import Binding
 from ui import theme
 from ui.icons import icon as ui_icon
 from ui.widgets import (
-    ActionTag, DangerButton, GhostButton, HotkeyChip, IconButton,
+    DangerButton, GhostButton, HotkeyChip, IconButton,
     PrimaryButton, Row, Search, Switch,
 )
 

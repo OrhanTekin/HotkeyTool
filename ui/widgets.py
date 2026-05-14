@@ -649,31 +649,6 @@ class Search(ctk.CTkFrame):
 
 
 # ════════════════════════════════════════════════════════════════════════════════
-# AnimatedCount — label whose number tweens between values
-# ════════════════════════════════════════════════════════════════════════════════
-
-class AnimatedCount(ctk.CTkLabel):
-    def __init__(self, parent, value: int = 0, *,
-                 fmt: Callable[[int], str] | None = None, **kw):
-        self._value = value
-        self._fmt = fmt or (lambda v: str(v))
-        super().__init__(parent, text=self._fmt(value), **kw)
-
-    def set(self, value: int) -> None:
-        if value == self._value:
-            return
-        start = self._value
-        end = value
-        self._value = end
-        def setter(v):
-            try:
-                self.configure(text=self._fmt(int(round(v))))
-            except Exception:
-                pass
-        theme.tween(self, setter, start, end, ms=350, ease=theme.ease_out_cubic)
-
-
-# ════════════════════════════════════════════════════════════════════════════════
 # Listening pill — pulsing dot + label, top-right of header
 # ════════════════════════════════════════════════════════════════════════════════
 
@@ -1172,26 +1147,3 @@ class FilterChip(ctk.CTkButton):
         )
 
 
-# ════════════════════════════════════════════════════════════════════════════════
-# Action tag (binding action chip)
-# ════════════════════════════════════════════════════════════════════════════════
-
-class ActionTag(ctk.CTkFrame):
-    def __init__(self, parent, kind: str, value: str | None = None):
-        super().__init__(
-            parent, fg_color=theme.BG_ELEVATED, corner_radius=5,
-            border_color=theme.BORDER_SOFT, border_width=1,
-        )
-        ctk.CTkLabel(
-            self, text=kind, font=theme.font(10),
-            text_color=theme.TEXT_3, fg_color="transparent",
-        ).pack(side="left", padx=(7, 3), pady=2)
-        if value:
-            ctk.CTkLabel(
-                self, text=value, font=theme.mono(10),
-                text_color=theme.TEXT_2, fg_color="transparent",
-            ).pack(side="left", padx=(0, 7), pady=2)
-        else:
-            self.pack_propagate(False)
-            self.configure(width=44)
-            ctk.CTkFrame(self, fg_color="transparent", width=4).pack(side="left")

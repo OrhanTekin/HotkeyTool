@@ -127,49 +127,6 @@ class Note:
 
 
 @dataclass
-class WindowState:
-    title: str
-    exe: str
-    x: int
-    y: int
-    width: int
-    height: int
-    maximized: bool = False
-
-    def to_dict(self) -> dict:
-        return {"title": self.title, "exe": self.exe,
-                "x": self.x, "y": self.y, "width": self.width, "height": self.height,
-                "maximized": self.maximized}
-
-    @classmethod
-    def from_dict(cls, d: dict) -> "WindowState":
-        return cls(title=d.get("title", ""), exe=d.get("exe", ""),
-                   x=d.get("x", 0), y=d.get("y", 0),
-                   width=d.get("width", 800), height=d.get("height", 600),
-                   maximized=d.get("maximized", False))
-
-
-@dataclass
-class WindowLayout:
-    id: str
-    name: str
-    windows: List[WindowState] = field(default_factory=list)
-
-    @classmethod
-    def new(cls, name: str = "Layout") -> "WindowLayout":
-        return cls(id=str(uuid.uuid4()), name=name)
-
-    def to_dict(self) -> dict:
-        return {"id": self.id, "name": self.name,
-                "windows": [w.to_dict() for w in self.windows]}
-
-    @classmethod
-    def from_dict(cls, d: dict) -> "WindowLayout":
-        return cls(id=d.get("id", str(uuid.uuid4())), name=d.get("name", "Layout"),
-                   windows=[WindowState.from_dict(w) for w in d.get("windows", [])])
-
-
-@dataclass
 class Todo:
     id: str
     text: str
@@ -277,7 +234,6 @@ class AppConfig:
     bindings: List[Binding] = field(default_factory=list)
     schedules: List[Schedule] = field(default_factory=list)
     snippets: List[Snippet] = field(default_factory=list)
-    layouts: List[WindowLayout] = field(default_factory=list)
     notes: List[Note] = field(default_factory=lambda: [Note.new("Quick Note")])
     clipboard_history: List[str] = field(default_factory=list)
     todos: List[Todo] = field(default_factory=list)
@@ -291,7 +247,6 @@ class AppConfig:
                 "bindings": [b.to_dict() for b in self.bindings],
                 "schedules": [s.to_dict() for s in self.schedules],
                 "snippets":  [s.to_dict() for s in self.snippets],
-                "layouts":   [l.to_dict() for l in self.layouts],
                 "notes":     [n.to_dict() for n in self.notes],
                 "clipboard_history": self.clipboard_history[:10],
                 "todos":     [t.to_dict() for t in self.todos],
@@ -307,7 +262,6 @@ class AppConfig:
                    bindings=[Binding.from_dict(b) for b in d.get("bindings", [])],
                    schedules=[Schedule.from_dict(s) for s in d.get("schedules", [])],
                    snippets=[Snippet.from_dict(s) for s in d.get("snippets", [])],
-                   layouts=[WindowLayout.from_dict(l) for l in d.get("layouts", [])],
                    notes=notes,
                    clipboard_history=d.get("clipboard_history", []),
                    todos=[Todo.from_dict(t) for t in d.get("todos", [])],

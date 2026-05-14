@@ -22,7 +22,7 @@ python main.py
 ## Building the .exe
 
 ```
-python -m PyInstaller --noconfirm --onefile --windowed --name "HotkeyTool" --icon "assets/hotkeytool.ico" --collect-all customtkinter --add-data "assets/fonts;assets/fonts" --add-data "assets/hotkeytool.ico;assets" main.py
+python -m PyInstaller --noconfirm --onefile --windowed --name "HotkeyTool" --icon "assets/hotkeytool.ico" --collect-all customtkinter --add-data "assets/fonts;assets/fonts" --add-data "assets/hotkeytool.ico;assets" --add-data "assets/icons;assets/icons" main.py
 ```
 
-The output will be placed in `dist/HotkeyTool.exe`. The `--add-data` flags bundle Geist + Geist Mono and the window icon into the executable.
+The output will be placed in `dist/HotkeyTool.exe`. The `--add-data` flags bundle Geist + Geist Mono, the window icon, and the brand-logo PNGs into the executable.

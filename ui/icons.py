@@ -1,14 +1,11 @@
 """
-PIL-rendered icons + brand logo for the design refresh.
+Static icon + brand-logo loader.
 
-CustomTkinter / Tk can't draw CSS gradients, real box-shadows, or SVG paths
-directly. This module renders the design bundle's icons (components.jsx) at
-arbitrary pixel size with antialiasing and exposes them as CTkImage instances
-so they can be dropped into CTkButton(image=...) / CTkLabel(image=...).
-
-Icons are stroke-style at strokeWidth=1.6 in a 24×24 viewBox, matching
-components.jsx exactly. Each icon takes a `color` and `size` and the result is
-cached.
+All glyphs live as monochrome (white-on-transparent) PNGs in
+`assets/icons/`.  `icon(name, size, color)` opens the master PNG once,
+replaces its RGB channel with the requested tint (preserving the alpha
+channel so anti-aliased edges stay smooth), resizes, and returns a
+CTkImage.  Result is cached.
 """
 from __future__ import annotations
 
@@ -16,32 +13,14 @@ from functools import lru_cache
 from typing import Tuple
 
 import customtkinter as ctk
-from PIL import Image, ImageDraw
+from PIL import Image
 
 from ui import theme
-
-
-# ── Helpers ────────────────────────────────────────────────────────────────────
-
-def _supersample() -> int:
-    return 4   # render at 4× then downscale for AA
 
 
 def _hex_to_rgb(c: str) -> Tuple[int, int, int]:
     c = c.lstrip("#")
     return int(c[0:2], 16), int(c[2:4], 16), int(c[4:6], 16)
-
-
-def _new_canvas(size: int) -> Tuple[Image.Image, ImageDraw.ImageDraw, float]:
-    s = _supersample()
-    img = Image.new("RGBA", (size * s, size * s), (0, 0, 0, 0))
-    d = ImageDraw.Draw(img)
-    # scale: design viewBox is 24, our size is `size` px, plus supersample
-    return img, d, (size * s) / 24.0
-
-
-def _finalize(img: Image.Image, size: int) -> Image.Image:
-    return img.resize((size, size), Image.LANCZOS)
 
 
 # ── Brand logo (static PNG asset) ──────────────────────────────────────────────
@@ -50,10 +29,8 @@ def _finalize(img: Image.Image, size: int) -> Image.Image:
 def brand_logo(size: int = 30) -> ctk.CTkImage:
     """Return the brand logo at the requested size.
 
-    Loaded from `assets/icons/brand_logo_<size>.png` — the pre-rendered images
-    are pixel-identical to what the previous PIL gradient/glyph code produced.
-    If no pre-rendered asset exists for the requested size we fall back to
-    the nearest one and let CTkImage rescale.
+    Loaded from `assets/icons/brand_logo_<size>.png`.  Falls back to the
+    30 px variant for any other size and lets CTkImage rescale.
     """
     from utils.resource_path import resource_path
     preferred = resource_path(f"assets/icons/brand_logo_{size}.png")
@@ -62,210 +39,35 @@ def brand_logo(size: int = 30) -> ctk.CTkImage:
     return ctk.CTkImage(light_image=img, dark_image=img, size=(size, size))
 
 
-# ── SVG-stroke icons (translated from components.jsx paths) ────────────────────
+# ── Stroke icons (loaded from monochrome PNGs, tinted at runtime) ──────────────
 
-def _stroke_icon(size: int, color: str, draw_fn) -> ctk.CTkImage:
-    img, d, sc = _new_canvas(size)
-
-    rgb = _hex_to_rgb(color)
-    stroke = (*rgb, 255)
-    sw = max(1, int(round(1.6 * sc)))
-
-    def P(x, y): return (x * sc, y * sc)
-    draw_fn(d, P, stroke, sw, sc)
-
-    final = _finalize(img, size)
-    return ctk.CTkImage(light_image=final, dark_image=final, size=(size, size))
-
-
-@lru_cache(maxsize=64)
+@lru_cache(maxsize=128)
 def icon(name: str, size: int = 13, color: str | None = None) -> ctk.CTkImage:
+    """Return a tinted icon at the requested pixel size.
+
+    Master art lives at `assets/icons/<name>.png` — white-on-transparent, 48 px.
+    At runtime we open the master, replace its RGB channel with the tint
+    colour (keeping the original alpha so anti-aliased edges stay smooth),
+    then resize to `size`.  Result is LRU-cached, so repeat lookups are
+    free.  Unknown names fall back to the `plus` glyph (matches the old
+    behaviour).
+    """
+    from utils.resource_path import resource_path
+
     color = color or theme.TEXT_2
+    rgb   = _hex_to_rgb(color)
 
-    def kbd(d, P, sk, sw, sc):
-        # rect 2,6 20x12 rx2
-        d.rounded_rectangle((P(2, 6), P(22, 18)), radius=int(2 * sc),
-                            outline=sk, width=sw)
-        for x in (6, 10, 14, 18):
-            cx, cy = P(x, 10); r = max(1, int(round(0.6 * sc)))
-            d.ellipse((cx - r, cy - r, cx + r, cy + r), fill=sk)
-        d.line((P(7, 14), P(17, 14)), fill=sk, width=sw)
+    path = resource_path(f"assets/icons/{name}.png")
+    if not path.exists():
+        path = resource_path("assets/icons/plus.png")
 
-    def bolt(d, P, sk, sw, sc):
-        # path d="M13 2 L4 14 L11 14 L10 22 L19 10 L12 10 L13 2 z"
-        pts = [(13, 2), (4, 14), (11, 14), (10, 22), (19, 10), (12, 10)]
-        d.polygon([P(*p) for p in pts], outline=sk, width=sw)
-
-    def calendar(d, P, sk, sw, sc):
-        d.rounded_rectangle((P(3, 5), P(21, 21)), radius=int(2 * sc),
-                            outline=sk, width=sw)
-        d.line((P(8, 3), P(8, 7)), fill=sk, width=sw)
-        d.line((P(16, 3), P(16, 7)), fill=sk, width=sw)
-        d.line((P(3, 10), P(21, 10)), fill=sk, width=sw)
-
-    def clipboard(d, P, sk, sw, sc):
-        d.rounded_rectangle((P(6, 4), P(18, 22)), radius=int(2 * sc),
-                            outline=sk, width=sw)
-        # the small clip
-        d.rounded_rectangle((P(9, 4), P(15, 7)), radius=max(1, int(0.5 * sc)),
-                            outline=sk, width=sw)
-
-    def quote(d, P, sk, sw, sc):
-        # two opening-quote curls, simplified to U-shapes
-        # left:  M3 14 V8 H9 V14 C9 17 7 19 4 19
-        d.line((P(3, 14), P(3, 8)), fill=sk, width=sw)
-        d.line((P(3, 8), P(9, 8)), fill=sk, width=sw)
-        d.line((P(9, 8), P(9, 14)), fill=sk, width=sw)
-        d.arc((P(2, 13), P(9, 19)), 0, 90, fill=sk, width=sw)
-        # right
-        d.line((P(13, 14), P(13, 8)), fill=sk, width=sw)
-        d.line((P(13, 8), P(19, 8)), fill=sk, width=sw)
-        d.line((P(19, 8), P(19, 14)), fill=sk, width=sw)
-        d.arc((P(12, 13), P(19, 19)), 0, 90, fill=sk, width=sw)
-
-    def timer(d, P, sk, sw, sc):
-        # circle 12,13 r=8
-        d.ellipse((P(4, 5), P(20, 21)), outline=sk, width=sw)
-        # hands
-        d.line((P(12, 9), P(12, 13)), fill=sk, width=sw)
-        d.line((P(12, 13), P(14, 15)), fill=sk, width=sw)
-        # crown
-        d.line((P(9, 2), P(15, 2)), fill=sk, width=sw)
-
-    def lst(d, P, sk, sw, sc):
-        for y in (6, 12, 18):
-            d.line((P(8, y), P(21, y)), fill=sk, width=sw)
-            cx, cy = P(3.5, y); r = max(1, int(round(0.9 * sc)))
-            d.ellipse((cx - r, cy - r, cx + r, cy + r), fill=sk)
-
-    def settings(d, P, sk, sw, sc):
-        d.ellipse((P(9, 9), P(15, 15)), outline=sk, width=sw)
-        # 8 little spokes
-        import math
-        cx, cy = P(12, 12)
-        for k in range(8):
-            a = k * math.pi / 4
-            r0 = 7.5 * sc
-            r1 = 10.5 * sc
-            x0 = cx + r0 * math.cos(a); y0 = cy + r0 * math.sin(a)
-            x1 = cx + r1 * math.cos(a); y1 = cy + r1 * math.sin(a)
-            d.line((x0, y0, x1, y1), fill=sk, width=sw)
-
-    def plus(d, P, sk, sw, sc):
-        d.line((P(12, 5), P(12, 19)), fill=sk, width=sw)
-        d.line((P(5, 12), P(19, 12)), fill=sk, width=sw)
-
-    def search(d, P, sk, sw, sc):
-        d.ellipse((P(4, 4), P(18, 18)), outline=sk, width=sw)
-        d.line((P(16.7, 16.7), P(21, 21)), fill=sk, width=sw)
-
-    def chart(d, P, sk, sw, sc):
-        d.line((P(3, 3), P(3, 21)), fill=sk, width=sw)
-        d.line((P(3, 21), P(21, 21)), fill=sk, width=sw)
-        # zig
-        d.line((P(7, 14), P(11, 10)), fill=sk, width=sw)
-        d.line((P(11, 10), P(15, 14)), fill=sk, width=sw)
-        d.line((P(15, 14), P(20, 8)), fill=sk, width=sw)
-
-    def stickynote(d, P, sk, sw, sc):
-        d.rounded_rectangle((P(3, 3), P(21, 21)), radius=int(2 * sc),
-                            outline=sk, width=sw)
-        d.line((P(16, 21), P(16, 16)), fill=sk, width=sw)
-        d.line((P(16, 16), P(21, 16)), fill=sk, width=sw)
-
-    def chevU(d, P, sk, sw, sc):
-        d.line((P(6, 15), P(12, 9)), fill=sk, width=sw)
-        d.line((P(12, 9), P(18, 15)), fill=sk, width=sw)
-
-    def chevD(d, P, sk, sw, sc):
-        d.line((P(6, 9), P(12, 15)), fill=sk, width=sw)
-        d.line((P(12, 15), P(18, 9)), fill=sk, width=sw)
-
-    def chevL(d, P, sk, sw, sc):
-        d.line((P(15, 18), P(9, 12)), fill=sk, width=sw)
-        d.line((P(9, 12), P(15, 6)), fill=sk, width=sw)
-
-    def chevR(d, P, sk, sw, sc):
-        d.line((P(9, 18), P(15, 12)), fill=sk, width=sw)
-        d.line((P(15, 12), P(9, 6)), fill=sk, width=sw)
-
-    def download(d, P, sk, sw, sc):
-        d.line((P(3, 15), P(3, 19)), fill=sk, width=sw)
-        d.line((P(3, 19), P(21, 19)), fill=sk, width=sw)
-        d.line((P(21, 19), P(21, 15)), fill=sk, width=sw)
-        d.line((P(7, 10), P(12, 15)), fill=sk, width=sw)
-        d.line((P(12, 15), P(17, 10)), fill=sk, width=sw)
-        d.line((P(12, 3), P(12, 15)), fill=sk, width=sw)
-
-    def upload(d, P, sk, sw, sc):
-        d.line((P(3, 15), P(3, 19)), fill=sk, width=sw)
-        d.line((P(3, 19), P(21, 19)), fill=sk, width=sw)
-        d.line((P(21, 19), P(21, 15)), fill=sk, width=sw)
-        d.line((P(7, 8), P(12, 3)), fill=sk, width=sw)
-        d.line((P(12, 3), P(17, 8)), fill=sk, width=sw)
-        d.line((P(12, 3), P(12, 15)), fill=sk, width=sw)
-
-    def folder(d, P, sk, sw, sc):
-        # M3 7 a2 2 0 012-2 h4 l2 2 h8 a2 2 0 012 2 v9 a2 2 0 01-2 2 H5 a2 2 0 01-2-2z
-        # simplified to a polygon
-        pts = [(3, 7), (5, 5), (9, 5), (11, 7), (19, 7), (21, 9),
-               (21, 18), (19, 20), (5, 20), (3, 18)]
-        d.line([P(*p) for p in pts] + [P(*pts[0])], fill=sk, width=sw, joint="curve")
-
-    def edit(d, P, sk, sw, sc):
-        # underline at y=20
-        d.line((P(12, 20), P(21, 20)), fill=sk, width=sw)
-        # pencil body — diamond shape
-        pts = [(16.5, 3.5), (19.5, 6.5), (7, 19), (3, 20), (4, 16)]
-        d.line([P(*p) for p in pts] + [P(*pts[0])],
-               fill=sk, width=sw, joint="curve")
-
-    def trash(d, P, sk, sw, sc):
-        # top rim
-        d.line((P(3, 6), P(21, 6)), fill=sk, width=sw)
-        # lid handle (small bump)
-        d.line((P(8, 6), P(8, 4)), fill=sk, width=sw)
-        d.line((P(8, 4), P(16, 4)), fill=sk, width=sw)
-        d.line((P(16, 4), P(16, 6)), fill=sk, width=sw)
-        # bottom box
-        pts = [(5, 6), (6, 21), (18, 21), (19, 6)]
-        d.line([P(*p) for p in pts], fill=sk, width=sw, joint="curve")
-        # vertical stripes inside
-        d.line((P(10, 11), P(10, 17)), fill=sk, width=sw)
-        d.line((P(14, 11), P(14, 17)), fill=sk, width=sw)
-
-    def dupe(d, P, sk, sw, sc):
-        # front sheet (lower-right)
-        d.rounded_rectangle((P(9, 9), P(20, 20)), radius=int(2 * sc),
-                            outline=sk, width=sw)
-        # back sheet (L-shape behind)
-        pts = [(9, 5), (4, 5), (4, 16), (8, 16)]   # L outline
-        d.line([P(*p) for p in pts], fill=sk, width=sw, joint="curve")
-        d.line((P(15, 5), P(15, 8)), fill=sk, width=sw)
-
-    paths = {
-        "keyboard":   kbd,
-        "bolt":       bolt,
-        "calendar":   calendar,
-        "clipboard":  clipboard,
-        "quote":      quote,
-        "timer":      timer,
-        "list":       lst,
-        "settings":   settings,
-        "plus":       plus,
-        "search":     search,
-        "chart":      chart,
-        "stickynote": stickynote,
-        "chevU":      chevU,
-        "chevD":      chevD,
-        "chevL":      chevL,
-        "chevR":      chevR,
-        "download":   download,
-        "upload":     upload,
-        "folder":     folder,
-        "edit":       edit,
-        "trash":      trash,
-        "dupe":       dupe,
-    }
-    fn = paths.get(name, plus)
-    return _stroke_icon(size, color, fn)
+    master = Image.open(str(path)).convert("RGBA")
+    alpha  = master.split()[-1]
+    tinted = Image.merge("RGBA", (
+        Image.new("L", master.size, rgb[0]),
+        Image.new("L", master.size, rgb[1]),
+        Image.new("L", master.size, rgb[2]),
+        alpha,
+    ))
+    final = tinted.resize((size, size), Image.LANCZOS)
+    return ctk.CTkImage(light_image=final, dark_image=final, size=(size, size))
